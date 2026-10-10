@@ -1,0 +1,102 @@
+# ============================================================
+#  DY-spark configuration
+#
+#  Copy this file to `config.yaml` and edit it:
+#      cp config.example.yaml config.yaml
+#
+#  config.yaml is gitignored, so your settings stay local.
+# ============================================================
+
+# Where the logged-in browser session is saved.
+# Delete this file to force a fresh QR-code login.
+session_file: .session/storage_state.json
+
+
+browser:
+  # false = a real window opens and you can watch what happens.
+  # Keep this false for the first few runs: it is the only way to see when a
+  # selector has gone stale and the script is clicking the wrong thing.
+  headless: false
+
+  # Attach to a browser you already have open, instead of launching a fresh one.
+  # This reuses your existing Douyin login, so there is no QR code to scan again.
+  #
+  # Start Edge with the debugging port open, log in normally, then leave it running:
+  #     & "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222
+  # and either set this, or pass --cdp http://127.0.0.1:9222 on the command line.
+  # Leave it empty ("") to launch dspark's own browser instead.
+  cdp_url: ""
+
+  # Randomised delay between keystrokes, in milliseconds: [min, max].
+  # Typing at a perfectly constant speed is one of the easiest things for a
+  # site to flag, so keep a range here rather than a single number.
+  typing_delay_ms: [45, 170]
+
+  # Slow down Playwright's own actions (ms). Playwright is far faster than a
+  # person; a small delay makes the run look less mechanical.
+  slow_mo_ms: 120
+
+
+douyin:
+  home_url: https://www.douyin.com/
+
+  # The private-message list. Confirmed: /chat is the real page.
+  messages_url: https://www.douyin.com/chat
+
+  # false = go straight to messages_url (the default, and what /chat is for)
+  # true  = open home_url and click the 消息 entry instead. Only useful if
+  #         Douyin moves the chat page; on a real account the click is flaky and
+  #         falls back to messages_url anyway.
+  navigate_via_home: false
+
+
+sending:
+  # Master switch. Even when true, nothing is sent unless you also pass --yes
+  # on the command line. Two independent switches, on purpose: this one is
+  # "is this tool allowed to send at all", --yes is "send on this run".
+  enabled: false
+
+  # How to decide who gets a message:
+  #   spark - only conversations that show a streak/火花 badge
+  #   list  - only the names listed under `targets` below
+  #   all   - every conversation in the list (easy to annoy people; avoid)
+  strategy: spark
+
+  # Which flame assets count as "has a spark". Empty list = all of them.
+  # The three known assets are:
+  #     normal_normal.png    blue_normal.png    gray_normal.png
+  # A grey flame sits on a 129-day streak, so grey is a normal list
+  # appearance rather than an absent streak. That is why all three count by
+  # default. Run `python -m dspark scan` to see which variant each friend has,
+  # then narrow this list if you want to skip some.
+  spark_variants: []
+
+  # Used when strategy is `list`. Match is by visible name, exact match.
+  targets: []
+  #  - 张三
+  #  - 李四
+
+  # One is picked at random per friend. The traditional streak-keeper is a
+  # single character — short, harmless, obviously not a real conversation.
+  messages:
+    - "."
+    - "晚上好"
+    - "🙂"
+
+  # Random pause between two friends, in seconds: [min, max].
+  # Too fast and Douyin starts rate-limiting you.
+  delay_between_ms: [5000, 15000]
+
+  # A runaway guard, not a budget. Keep it above your friend count: anything it
+  # truncates silently loses its streak, and the run still reports success.
+  # `send` prints a loud warning whenever this actually cuts someone out.
+  max_per_run: 100
+
+
+# Anything printed in the terminal.
+logging:
+  # Show every page action Playwright takes.
+  verbose: false
+
+  # Save a timestamped log next to the diagnostics.
+  save_to_file: true

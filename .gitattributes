@@ -1,0 +1,6 @@
+# Normalise line endings in the repository.
+#
+# LF everywhere, except Windows batch files: cmd.exe is happiest with CRLF, and
+# gets confused by the alternatives in places like label handling.
+* text=auto eol=lf
+*.bat text eol=crlf

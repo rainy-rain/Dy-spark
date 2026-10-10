@@ -1,0 +1,5 @@
+<img class="commonStreakicon commonStreakscaleOutIcon" src="https://lf3-static.bytednsdoc.com/obj/eden-cn/tp_upfbvk/ljhwZthlaukjlkulzlp/flame_icon/normal/normal_normal.png" alt="">
+
+<img class="commonStreakicon" src="https://lf3-static.bytednsdoc.com/obj/eden-cn/tp_upfbvk/ljhwZthlaukjlkulzlp/flame_icon/normal/blue_normal.png" alt="">
+
+<img class="commonStreakicon" src="https://lf3-static.bytednsdoc.com/obj/eden-cn/tp_upfbvk/ljhwZthlaukjlkulzlp/flame_icon/normal/gray_normal.png" alt="">

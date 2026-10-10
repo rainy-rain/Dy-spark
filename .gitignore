@@ -1,0 +1,20 @@
+# Logged-in session (contains your Douyin cookies — never commit this)
+.session/
+
+# Where the `probe` command dumps page structure
+diagnostics/
+
+# Playwright's Chromium, kept inside the project instead of AppData
+.browsers/
+
+# The separate Edge profile that `dspark edge` creates and signs in to
+.edge-profile/
+
+# Your real config (config.example.yaml is the committed template)
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
