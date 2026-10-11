@@ -1,56 +1,48 @@
 # DY-spark
 
-Send one message a day to the friends you care about, so your Douyin chat
-streaks stay alive — from the command line, on your own machine, with your own
-account.
+每天给你在意的人发一条消息，让抖音聊天火花（连续聊天天数）不掉——命令行运行，跑在你自己的机器上，用你自己的账号。
 
 ```
-python -m dspark login        # scan the QR code once
-python -m dspark scan         # list every chat and whether it has a spark
-python -m dspark send         # dry run: lists who it would message
-python -m dspark send --yes   # actually send
+python -m dspark login        # 扫一次二维码
+python -m dspark scan         # 列出每个会话，以及有没有火花
+python -m dspark send         # 空跑：只列出会发给谁，不发送
+python -m dspark send --yes   # 真正发送
 ```
 
-Repair tools, for when Douyin changes something:
+抖音改版时用的排查工具：
 
 ```
-python -m dspark edge         # open a browser with the debugging port on
-python -m dspark pick         # click a page element, get its selector
-python -m dspark probe        # dump the whole page
-python -m dspark analyze      # work out selectors from a dump, offline
+python -m dspark edge         # 开一个带调试端口的浏览器
+python -m dspark pick         # 点页面元素，直接得到它的选择器
+python -m dspark probe        # 把整个页面 dump 下来
+python -m dspark analyze      # 离线从 dump 里推断选择器
 ```
+
+嫌麻烦可以直接双击 `scan.bat`：它会自动把浏览器准备好 → 扫描 → 问你要不要发 → 让你输入文案 → 发送。
 
 ---
 
-## Read this before anything else
+## 请先读这一节
 
-Douyin requires an account to see the chat page, so this was built from material
-that actually came off the live site, and the confidence varies by part:
+抖音的聊天页需要登录才能看到，所以本项目里的一切都是从**真实页面上读下来的**，而不是猜的。但各部分的确信程度不一样：
 
-| Part | Status |
+| 部分 | 状态 |
 |---|---|
-| Browser layer: launch, session cookies, `storageState`, screenshots | **Verified** against live douyin.com |
-| Login detection (logged in vs out) | **Verified** — correctly reports "logged out" |
-| Home page hooks: message entry, login button | **Verified** |
-| Chat rows and the spark badge | **Verified** — markup copied from DevTools, see below |
-| The composer (Slate editor) | **Verified** — markup copied from DevTools, see below |
-| Config loading and validation, error messages | **Verified** — every failure path tested |
-| Dry-run, rate limiting, the two switches, variant filter | **Verified** — 82 offline tests |
+| 浏览器层：启动、会话 cookie、`storageState`、截图 | **已实测**（针对真实的 douyin.com） |
+| 登录状态判断（已登录 / 未登录） | **已实测** —— 未登录时能正确报告 |
+| 首页钩子：消息入口、登录按钮 | **已实测** |
+| 会话行与火花徽标 | **已实测** —— 标记从 DevTools 原样抄下来，见下 |
+| 输入框（Slate 编辑器） | **已实测** —— 标记从 DevTools 原样抄下来，见下 |
+| 配置加载与校验、错误信息 | **已实测** —— 每条失败路径都有测试 |
+| 空跑、限速、两道开关、变体过滤 | **已实测** —— 82 个离线测试 |
 
-Every selector now comes from markup that was actually read off the live site.
-What remains untested is only the *interaction*: whether Slate accepts the
-synthetic key events. `_send_to` therefore verifies the text landed before
-pressing Enter, and says so plainly if it did not, rather than reporting a
-message it never sent.
+现在每一个选择器都来自真实页面。**唯一没有验证的是"交互"本身**：Slate 编辑器是否接受合成键盘事件。所以 `_send_to` 会在按下回车前**把输入框内容读回来核对**，如果文字没进去就明确报告，而不是谎报一条根本没发出的消息。
 
-**Douyin's terms of service** do not invite automation. This tool only ever
-messages people *you* are already talking to, from *your* account, and it
-deliberately stays slow — but a streak is worth less than an account. Run `scan`
-and `send` (dry run) for a few days before you trust it.
+> **抖音的用户协议并不欢迎自动化。** 本工具只会用*你自己的账号*，给你*本来就在聊*的人发消息，而且刻意做得很慢——但一个火花不值得拿账号去赌。建议先跑几天 `scan` 和空跑的 `send`，确认可靠再正式用。
 
-### What the real markup looks like
+### 真实页面结构长什么样
 
-Chat row, copied from DevTools on a logged-in `douyin.com/chat`:
+会话行，从已登录的 `douyin.com/chat` 的 DevTools 里抄的：
 
 ```html
 <div data-e2e="conversation-item" class="conversationConversationItemWrapper">
@@ -72,43 +64,25 @@ Chat row, copied from DevTools on a logged-in `douyin.com/chat`:
 </div>
 ```
 
-Three things worth taking from this:
+从这段标记里能得出六件事，每一件都是踩出来的：
 
-1. **Conversation rows carry `data-e2e="conversation-item"`.** That is the row
-   selector, and it is stable.
-2. **The streak length is in the markup** (`commonStreaknormalText` → `129`).
-   `scan` prints it, which turns "did detection work?" into something you can
-   check by eye instead of trusting a yes/no flag.
-3. **A grey flame sat on a 129-day streak.** This is the trap: grey is a normal
-   list appearance, *not* an absent streak. All three known flame assets
-   (`normal_normal`, `blue_normal`, `gray_normal`) therefore count by default,
-   and `sending.spark_variants` lets you narrow that if you disagree.
-4. **The list is virtualised.** `/chat` keeps roughly one screenful of rows in
-   the DOM and recycles them as you scroll. Reading it once returns a window
-   onto the list, not the list — the first working version found 13
-   conversations and reported it with complete confidence. `scan` scrolls to the
-   bottom instead, collecting as it goes and de-duplicating by avatar URL (a row
-   index stops meaning anything once nodes have been recycled). On the machine
-   this was built against, that took the count from 13 to 42.
+1. **会话行带 `data-e2e="conversation-item"`。** 这就是行选择器，而且稳定。
 
-   The scroll is done in JavaScript rather than with
-   `locator.scroll_into_view_if_needed()`, because that waits for an element to
-   be "stable" — and in a virtualised list the element being scrolled is exactly
-   the one that keeps getting recycled. It failed mid-scroll, which silently
-   truncated the results.
-5. **Sending has its own version of the same problem.** The scan leaves the list
-   scrolled to the bottom, and finding a specific friend only walks *downward* —
-   so the first real run reported `Could not find '某位好友' in the list` for all
-   nine friends near the top. The search now rewinds before every sweep, and
-   sweeps twice: one sweep found 26 of 29 on one run and 29 of 29 on the next
-   with no code change between them, and in this loop a flake is a friend whose
-   streak breaks.
-6. **Scroll by half a screen, not most of one.** The virtualiser can render
-   fewer rows than fit on screen, so a 0.85-screen jump steps over a whole band
-   of conversations. That is how a friend who was plainly in the list got
-   reported as missing.
+2. **火花天数就在标记里**（`commonStreaknormalText` → `129`）。`scan` 会把它打印出来，这样"识别对不对"就变成了**用眼睛能核对**的事，而不是只能相信一个是/否标志。
 
-The composer, likewise copied from DevTools:
+3. **灰色的火花对应 129 天的连续天数。** 这是最大的陷阱：**灰色只是列表里的普通显示状态，不代表没有火花**。所以三种火焰图标（`normal_normal`、`blue_normal`、`gray_normal`）默认**都算**；如果你不认同，可以用 `sending.spark_variants` 收窄。
+
+4. **列表是虚拟化的。** `/chat` 在 DOM 里只保留大约一屏的行，滚动时**复用**这些节点。所以"读一次"拿到的是**列表的一个窗口，不是列表本身**——最早能跑的版本读到 13 个会话，并且**非常自信地**把它当成了全部。现在的做法是滚到底、沿途收集，并按头像 URL 去重（节点被复用之后，行号就毫无意义了）。在开发用的那个账号上，这个改动把数量从 13 变成了 42。
+
+   滚动是用 JavaScript 做的，而不是 `locator.scroll_into_view_if_needed()`——因为后者要等元素"稳定"，而虚拟列表里**正被滚动的那一行恰恰就是会被回收的那一行**。它会在滚动中途报错，从而**悄悄截断结果**。
+
+5. **滚动位置会被记住。** 抖音会把列表的滚动位置跨刷新恢复，所以一个停在底部的页面重新加载后**还是在底部**。更隐蔽的是：把 `scrollTop` 设成 0 **并不会让虚拟列表重新渲染**，DOM 里短时间内还是旧位置的那些行。最初"回顶部"的写法因此收走了**列表尾部**，而最前面 9 个会话从头到尾没被看见过。现在回顶部后要**盯着首行直到它真的变了**才算数。
+
+6. **发送流程有它自己的版本。** 扫描结束时列表停在底部，而查找某个好友**只往下走**——所以第一次真实运行对靠前的九个好友全部报了 `Could not find '某位好友' in the list`。现在每次查找前都回顶部，而且**扫两遍**：某次扫描找到 29 个里的 26 个，下一次同样的代码找到 29 个——这种偶发失败在这个循环里等于"某个人的火花断掉"，不能接受。
+
+   还有：**一次滚动半屏，不是大半屏。** 虚拟列表渲染的行数可能少于一屏，0.85 屏的跳跃会**整段跳过**一批会话——这就是"明明在列表里的人却被报告找不到"的原因。
+
+输入框同理，从 DevTools 抄的：
 
 ```html
 <div data-e2e="msg-input" class="messageMsgInputcontainer">
@@ -125,94 +99,71 @@ The composer, likewise copied from DevTools:
 </div>
 ```
 
-**It is a Slate.js editor, not a textarea.** Three consequences, all handled:
+**它是 Slate.js 编辑器，不是 textarea。** 由此带来三个后果，代码里都处理了：
 
-| Consequence | What the code does |
+| 后果 | 代码怎么处理 |
 |---|---|
-| `fill()` does nothing to a Slate editor | clicks to focus, then sends real key events |
-| An empty composer still holds a zero-width space (U+200B) | `_COMPOSER_JS` strips `[\u200b-\u200d\ufeff]` before testing emptiness |
-| Slate *might* refuse synthetic input | `_send_to` reads the composer back and refuses to press Enter if the text never arrived |
+| `fill()` 对 Slate 编辑器**完全无效** | 先点击聚焦，再发送真实键盘事件 |
+| 空的输入框里仍有一个零宽空格（U+200B） | `_COMPOSER_JS` 在判断空之前先剥掉 `[\u200b-\u200d\ufeff]` |
+| Slate **可能**拒绝合成输入 | `_send_to` 会读回输入框内容，文字没进去就拒绝按回车 |
 
-That second one is a genuine bug that would have shipped: JS's `String.trim()`
-does not remove U+200B, so every successful send would have been misread as a
-failure and followed by a pointless click on the fallback send button. A guard
-test now pins the escaping, because a single missing backslash turns
-`[\u200b-…]` into `[u200b-…]` — which matches the literal letters u, 2, 0, b.
+第二条是一个**差点上线的真 bug**：JS 的 `String.trim()` **不会**去掉 U+200B，所以每一次成功发送都会被误判为失败，然后还会去点一个毫无意义的备用发送按钮。现在有专门的测试钉住这段转义——因为**少写一个反斜杠**就会把 `[\u200b-…]` 变成 `[u200b-…]`，那就变成了匹配字母 u、2、0、b。
 
-Also read off the live site, for the login flow:
+登录流程相关的标记，同样是从真实页面读的：
 
 ```html
-<!-- The message entry is the 消息 button in the top bar -->
+<!-- 消息入口就是顶栏的「消息」按钮 -->
 <div data-e2e="im-entry">
   <div><div data-e2e="something-button">
     <div><i></i></div><p>消息</p>
   </div></div>
 </div>
 
-<!-- The login button's class is hashed, so text is the only hook -->
+<!-- 登录按钮的 class 是哈希，所以只能用文字定位 -->
 <p class="VQdYTqcZ">登录</p>
 ```
 
-Searching the DOM for `class~="login"` or `class~="avatar"` matches **nothing** —
-yet `commonStreakicon` is a perfectly readable class. That is the lesson: Douyin
-runs two naming systems at once. Layout uses hashed CSS-module names that change
-every deploy; feature-level pieces keep readable names that do not. So prefer
-`data-e2e`, then a *readable* class, and never a hash.
+在 DOM 里搜 `class~="login"` 或 `class~="avatar"` **什么也搜不到**——可 `commonStreakicon` 却是个完全可读的类名。这就是关键一课：**抖音同时跑着两套命名系统**。布局用的是 CSS-module 哈希名，每次发布都变；功能级的部件保留可读名，不会变。所以优先级是：`data-e2e` → **可读的**类名 → 永远不要用哈希。
 
-Two gotchas this surfaced, both now handled in code:
+这个过程还暴露了两个坑，代码里都处理了：
 
-1. **Clicking the message entry while logged out does not raise an error.**
-   Douyin silently bounces you to the featured feed (`/jingxuan`). Trusting the
-   click would leave the tool reading an empty list and blaming its selectors,
-   so `_goto_messages()` confirms arrival and tells you which of the two causes
-   it is.
-2. The message page failed to appear on the first attempt, and the tool says so
-   explicitly rather than reporting "0 conversations found".
+1. **未登录时点「消息」入口不会报错。** 抖音会**静默地**把你弹到推荐页（`/jingxuan`）。如果盲目相信这次点击，工具就会去读一个空列表，然后把锅甩给选择器。所以 `_goto_messages()` 会**确认真的到达了**，并告诉你到底是两种原因里的哪一种。
+2. 消息页第一次没出现时，工具会**明确说出来**，而不是报告"找到 0 个会话"。
 
 ---
 
-## How it works
+## 工作原理
 
-### 1. Login lives in a JSON file, not in this code
+### 1. 登录状态存在 JSON 文件里，不在代码里
 
-The session is persisted with Playwright's own `storageState`, which serialises
-cookies and localStorage to disk. This is the same approach the reference
-project [laizan](https://github.com/GHkmmm/laizan) takes — its `ipc/auth.ts` is
-about twenty lines and the whole of it is:
+会话用 Playwright 自带的 `storageState` 持久化，它把 cookie 和 localStorage 序列化到磁盘。参考项目 [laizan](https://github.com/GHkmmm/laizan) 用的也是这个办法——它的 `ipc/auth.ts` 只有二十来行，核心就这些：
 
 ```ts
 ipcMain.handle('hasAuth', () => Boolean(storage.get(StorageKey.auth)))
 ipcMain.handle('login', async () => { await loginAndStorageState() })
 ```
 
-So: the browser opens once, **you** scan the QR code, the state is written to
-`.session/storage_state.json`, and every later run injects it. This tool never
-sees a password, a verification code, or your phone.
+所以流程是：浏览器打开**一次**，**你自己**扫码，状态写进 `.session/storage_state.json`，之后每次运行自动注入。**本工具从头到尾见不到你的密码、验证码和手机号。**
 
-### 2. Elements are found by `data-e2e`, not by class name
+### 2. 用 `data-e2e` 定位，而不是类名
 
-Douyin's class names are hashed and change on every deploy, so they are useless
-as hooks. The attribute they do keep is `data-e2e`. laizan leans on it too — it
-closes the comment panel with
+抖音的类名是哈希的，每次发布都变，做钩子毫无价值。它真正保留的属性是 `data-e2e`。laizan 也依赖它——它用
 
 ```
 [data-e2e="feed-active-video"] [data-e2e="feed-comment-icon"]
 ```
 
-and triggers a like by pressing `z` rather than clicking anything. Stable
-attributes plus keyboard shortcuts is the whole trick.
+关掉评论面板，用按 `z` 键而不是点击来点赞。**稳定的属性 + 键盘快捷键**，整套技巧就这些。
 
-### 3. Nothing is sent unless two switches agree
+### 3. 两道开关都同意才会发送
 
-`sending.enabled: true` in the config means "this tool is allowed to send at
-all". The `--yes` flag means "send on this run". Both are required. A run
-without `--yes` prints exactly who it would message and with what, then stops.
+配置里的 `sending.enabled: true` 意思是"这个工具被允许发送"。命令行的 `--yes` 意思是"这次真的发"。**两个都需要。** 不带 `--yes` 的运行会完整打印出"会发给谁、发什么"，然后停下。
 
 ---
 
-## Install
+## 安装
 
-Requires Python 3.10 or newer.
+需要 Python 3.10 或更高版本。
 
 ```bash
 cd DY-spark
@@ -227,8 +178,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Then install Chromium **into the project** rather than your per-user cache, so
-the whole tool stays self-contained:
+然后把 Chromium 装**到项目里**，而不是装进用户级缓存，这样整个工具是自包含的：
 
 ```bash
 # Windows (PowerShell)
@@ -239,12 +189,9 @@ python -m playwright install chromium
 PLAYWRIGHT_BROWSERS_PATH="$PWD/.browsers" python -m playwright install chromium
 ```
 
-That is a one-time ~700 MB download into `DY-spark/.browsers/` (it is
-gitignored). You only need the environment variable for the *install* —
-`dspark/browser.py` finds `.browsers/` at runtime by itself, so you never have
-to export anything again.
+这是一次性的约 700 MB 下载，落在 `DY-spark/.browsers/`（已被 gitignore）。**这个环境变量只需要在安装时设一次**——`dspark/browser.py` 在运行时会自己找到 `.browsers/`，以后不用再 export。
 
-Finally:
+最后：
 
 ```bash
 cp config.example.yaml config.yaml     # Windows: copy config.example.yaml config.yaml
@@ -252,64 +199,60 @@ cp config.example.yaml config.yaml     # Windows: copy config.example.yaml confi
 
 ---
 
-## Quick start
+## 快速开始
 
-### Step 1 — log in
+### 步骤 1 —— 登录
 
 ```bash
 python -m dspark login
 ```
 
-A real browser window opens. Scan the QR code with the Douyin app. The window
-closes itself once the session is saved.
+会弹出一个真实浏览器窗口。用抖音 App 扫码。会话保存好后窗口会自己关闭。
 
-Check it worked:
+检查是否成功：
 
 ```bash
 python -m dspark status
 ```
 
-### Step 2 — scan, and check the spark detection
+### 步骤 2 —— 扫描，核对火花识别
 
 ```bash
 python -m dspark scan
 ```
 
-Sends nothing. It walks the chat list and prints one line per conversation:
+不发送任何东西。它会走完整个聊天列表，每个会话打印一行：
 
 ```
   #  spark   days  variant             name
 ---  -----  -----  ------------------  -----
   1  yes      129  gray_normal.png     张三
-  2  yes       12  normal_normal.png   张三
+  2  yes       12  normal_normal.png   李四
   3  -          -  -                   王五
   4  yes        3  blue_normal.png     赵六
 
-[ok] 24 conversation(s), 11 with a spark
-[i] strategy `spark` would message exactly those 11.
+[ok] 42 conversation(s) found by scrolling the whole list, 29 with a spark
+[i] strategy `spark` matches 29 conversation(s); max_per_run 100 -> 29 would be messaged
 [i] Nothing was sent.
 ```
 
-**Read that table before going any further.** Compare a few rows with what the
-Douyin app shows you: if the day counts match and the right people are marked
-`yes`, detection is right. If not, go to Step 3.
+**继续之前，先把这张表读一遍。** 挑几行跟抖音 App 里显示的对比：如果天数对得上、该标 `yes` 的人确实标了 `yes`，那识别就是准的。不对就去步骤 3。
 
-The `variant` column is the filename of the flame image that was found. To skip
-a particular colour, list the ones to keep under `sending.spark_variants`.
+最后两行是刻意分开的：**匹配到多少**（29）和**这次会发多少**（也 29）。如果 `max_per_run` 小于匹配数，两者会不一样，工具会**大声警告**——因为静默截断意味着有人火花断掉，而运行日志还显示成功。
 
-### Step 3 — fix the selectors (only if Step 2 looked wrong)
+`variant` 那一列是找到的火焰图片文件名。想跳过某种颜色，就把要保留的列进 `sending.spark_variants`。
 
-Two ways, and the first one is much faster.
+### 步骤 3 —— 修选择器（只在步骤 2 看起来不对时做）
 
-**(a) `pick` — click the element, get the selector.** Recommended:
+两种办法，第一种快得多。
+
+**（a）`pick` —— 点元素，拿选择器。** 推荐：
 
 ```bash
 python -m dspark pick
 ```
 
-A browser opens with a blue badge in the top-left corner. Log in, walk to the
-message page, then click the badge to turn picking on. Now every element you
-click prints its selectors in the terminal, best first:
+会打开一个浏览器，左上角有个蓝色徽标。登录、走到消息页，然后点徽标开启拾取。之后你点的每个元素都会在终端里打印它的选择器，最好的排在最前面：
 
 ```
 [ok] <textarea>  
@@ -317,165 +260,161 @@ click prints its selectors in the terminal, best first:
 [i]   div[contenteditable="true"]
 ```
 
-It never suggests a hashed class name. The candidates it offers, in order of how
-long they usually survive:
+它**永远不会**建议哈希类名。给出的候选按"通常能活多久"排序：
 
-| Order | What | Why |
+| 顺序 | 类型 | 原因 |
 |---|---|---|
-| 1 | `[data-e2e="..."]` | the attribute Douyin actually maintains |
-| 2 | an ancestor's `data-e2e` + tag | for icons and inner spans |
-| 3 | `#id`, `placeholder`, `aria-label`, `role` | stable when present |
-| 4 | other `data-*` attributes | often generated, but usually stable |
-| 5 | `tag:has-text("...")` | short visible text |
+| 1 | `[data-e2e="..."]` | 抖音真正在维护的属性 |
+| 2 | 祖先的 `data-e2e` + 标签 | 用于图标和内部 span |
+| 3 | `#id`、`placeholder`、`aria-label`、`role` | 存在时很稳定 |
+| 4 | 其他 `data-*` 属性 | 常是生成的，但一般稳定 |
+| 5 | `tag:has-text("...")` | 短可见文本 |
 
-It survives navigation, because it is installed as an init script rather than
-once on a page — so you can log in and walk around before picking anything.
-Results are also saved to `diagnostics/picked-<time>.json`.
+它能跨页面导航存活，因为它是作为 init script 注入的，而不是在某个页面上装一次——所以你可以先登录、到处走一圈，再开始拾取。结果也会存到 `diagnostics/picked-<time>.json`。
 
-**(b) `probe` — dump everything.** Use this when you need to see the whole page:
+**（b）`probe` —— dump 整个页面。** 需要看全貌时用：
 
 ```bash
 python -m dspark probe
 ```
 
-This writes three files into `diagnostics/`:
+会在 `diagnostics/` 里写三个文件：
 
-| File | What it is |
+| 文件 | 是什么 |
 |---|---|
-| `probe-<time>.png` | a screenshot — often enough on its own |
-| `probe-<time>.html` | the full DOM, for searching |
-| `probe-<time>.json` | every `data-e2e` value on the page |
+| `probe-<time>.png` | 截图——经常光看它就够了 |
+| `probe-<time>.html` | 完整 DOM，用于搜索 |
+| `probe-<time>.json` | 页面上每一个 `data-e2e` 值 |
 
-Then edit `dspark/selectors.py` — the constants under *Message page* are the
-ones marked unverified. Run `pick` or `probe` again until the counts look right.
+然后编辑 `dspark/selectors.py`——*Message page* 下面那几个常量就是标注为未验证的。重跑 `pick` 或 `probe`，直到数量对了为止。
 
-> If you cannot find a streak badge at all, Douyin's web client may not render
-> one. In that case set `sending.strategy: list` and name your friends under
-> `sending.targets` — the tool then never needs to read the badge.
+> 如果你**完全找不到**火花徽标，可能是抖音网页版根本不渲染它。这种情况把 `sending.strategy` 设成 `list`，在 `sending.targets` 里写上好友昵称——这样工具就完全不需要读徽标了。
 
-### Step 4 — dry run
+### 步骤 4 —— 空跑
 
 ```bash
 python -m dspark send
 ```
 
-Prints who it *would* message and with what. Nothing is sent. Repeat until the
-list is exactly the people you expect.
+打印出**会**发给谁、发什么。不会真的发送。反复跑到名单正好是你预期的人为止。
 
-### Step 5 — enable and send
+### 步骤 5 —— 开启并发送
 
-In `config.yaml`:
+在 `config.yaml` 里：
 
 ```yaml
 sending:
   enabled: true
 ```
 
-Then:
+然后：
 
 ```bash
 python -m dspark send --yes
 ```
 
-Keep `browser.headless: false` for the first real run, so you can watch it.
+第一次真实发送时保持 `browser.headless: false`，这样可以盯着看。
 
 ---
 
-## Configuration
+## 配置
 
-| Key | Meaning |
+| 键 | 含义 |
 |---|---|
-| `session_file` | where the login is saved. Delete it to force a new QR login. |
-| `browser.headless` | `false` shows the window. Keep it visible while tuning. |
-| `browser.typing_delay_ms` | random per-keystroke delay `[min, max]` |
-| `browser.slow_mo_ms` | slows every Playwright action down |
-| `douyin.navigate_via_home` | `true` clicks into messages; `false` goes straight to `messages_url` |
-| `sending.enabled` | master switch for sending |
-| `sending.strategy` | `spark` (only streaks) · `list` (only `targets`) · `all` (everyone) |
-| `sending.spark_variants` | which flame assets count; empty = all three |
-| `sending.targets` | friend names, used by the `list` strategy |
-| `sending.messages` | one is picked at random per friend |
-| `sending.delay_between_ms` | random gap between two friends `[min, max]` |
-| `sending.max_per_run` | hard ceiling, whatever the strategy picked |
-| `logging.verbose` | print every page action |
+| `session_file` | 登录状态存在哪。删掉它会强制重新扫码。 |
+| `browser.headless` | `false` 会显示窗口。调试期间保持可见。 |
+| `browser.cdp_url` | 接管已运行的浏览器，例如 `http://127.0.0.1:9222`；留空则自己启动一个 |
+| `browser.typing_delay_ms` | 每个按键的随机延迟 `[最小, 最大]` |
+| `browser.slow_mo_ms` | 放慢每一个 Playwright 动作 |
+| `douyin.navigate_via_home` | `true` 从首页点进消息；`false` 直接访问 `messages_url`（默认） |
+| `sending.enabled` | 发送总开关 |
+| `sending.strategy` | `spark`（只发有火花的）· `list`（只发 `targets` 里的）· `all`（所有人） |
+| `sending.spark_variants` | 哪些火焰图标算数；留空 = 三种全算 |
+| `sending.targets` | 好友昵称，供 `list` 策略使用 |
+| `sending.messages` | 每个好友随机挑一条 |
+| `sending.delay_between_ms` | 两个好友之间的随机间隔 `[最小, 最大]` |
+| `sending.max_per_run` | 单次硬上限，不管策略选中了多少 |
+| `logging.verbose` | 打印每一个页面动作 |
 
-Run `python -m dspark config` to see what the file actually resolves to.
+跑 `python -m dspark config` 可以看到配置实际解析成了什么。
+
+> **关于 `max_per_run`：** 它是防止失控的护栏，不是预算。**请把它设得比你的好友数大**——它截断掉的人是**静默地**丢掉火花的，而日志照样显示成功。一旦它真的截断了，`send` 会大声警告。
 
 ---
 
-## Running it daily
+## 每天自动运行
 
-**Windows — Task Scheduler.** Create a Basic Task, daily, action *Start a
-program*:
+**Windows —— 任务计划程序。** 新建基本任务，每天，操作选*启动程序*：
 
-- Program: `C:\path\to\DY-spark\.venv\Scripts\python.exe`
-- Arguments: `-m dspark send --yes`
-- Start in: `C:\path\to\DY-spark`
+- 程序：`C:\path\to\DY-spark\.venv\Scripts\python.exe`
+- 参数：`-m dspark send --yes`
+- 起始于：`C:\path\to\DY-spark`
 
-**macOS / Linux — cron:**
+**macOS / Linux —— cron：**
 
 ```
 0 21 * * * cd /path/to/DY-spark && .venv/bin/python -m dspark send --yes
 ```
 
-Either way, set `logging.save_to_file: true` so there is a record in
-`diagnostics/dspark-YYYYMMDD.log` of what ran and what it did.
+两种方式都建议打开 `logging.save_to_file: true`，这样 `diagnostics/dspark-YYYYMMDD.log` 里会留下每次运行的记录。
 
-The streak only needs one message per day, so once a day is enough — running it
-more often just makes you look automated.
+火花每天只需要一条消息，所以一天一次就够了——跑得更勤只会让你看起来更像机器人。
 
 ---
 
-## Project layout
+## 目录结构
 
 ```
 DY-spark/
-├── config.example.yaml     template; copy to config.yaml
+├── scan.bat                一键：准备浏览器 → 扫描 → 询问 → 发送
+├── config.example.yaml     模板；复制成 config.yaml
 ├── requirements.txt
 ├── dspark/
-│   ├── __main__.py         CLI entry point        (python -m dspark)
-│   ├── config.py           loading + validation
-│   ├── browser.py          Playwright session, storageState, human-ish typing
-│   ├── selectors.py        ALL Douyin selectors — the file to fix
-│   ├── picker.py           interactive "click an element, get its selector"
-│   ├── streak.py           login / status / probe / send
-│   └── console.py          output, mirrored to a log file
-├── tests/                  offline unit tests (no browser, no network)
-├── .session/               your login (gitignored)
-├── .browsers/              the Chromium copy (gitignored)
-└── diagnostics/            probe dumps, picked selectors, logs (gitignored)
+│   ├── __main__.py         CLI 入口              (python -m dspark)
+│   ├── config.py           加载 + 校验
+│   ├── browser.py          Playwright 会话、storageState、拟人化打字
+│   ├── selectors.py        所有抖音选择器 —— 出问题就改这个文件
+│   ├── analyze.py          离线 DOM 分析：找候选列表、差异点、输入框
+│   ├── picker.py           交互式"点元素、拿选择器"
+│   ├── cdp.py              启动 / 接管带调试端口的浏览器
+│   ├── streak.py           login / status / probe / scan / send
+│   └── console.py          输出，并镜像到日志文件
+├── tests/                  离线单元测试（不需要浏览器，不需要网络）
+├── .session/               你的登录状态（已 gitignore）
+├── .browsers/              Chromium 副本（已 gitignore）
+├── .edge-profile/          dspark 专用的浏览器 profile（已 gitignore）
+└── diagnostics/            probe dump、拾取的选择器、日志（已 gitignore）
 ```
 
-## Tests
+## 测试
 
-The parts that decide *who gets a message* are covered by offline tests:
+决定*谁会收到消息*的那部分全部有离线测试覆盖：
 
 ```bash
 python -m unittest discover -s tests -t . -v
 ```
 
-19 tests: config defaults, every validation failure path, and all three target
-strategies including the per-run cap. No browser and no network needed.
+82 个测试：配置默认值、每一条校验失败路径、三种目标策略（含单次上限）、火花识别的标记固件、CLI 参数解析、CDP 工具函数。**不需要浏览器，也不需要网络。**
 
 ---
 
-## Troubleshooting
+## 常见问题
 
-| Symptom | Cause and fix |
+| 现象 | 原因与解决 |
 |---|---|
 | `config file not found` | `cp config.example.yaml config.yaml` |
-| `Playwright is not installed` | `pip install -r requirements.txt` then `python -m playwright install chromium` |
-| `Could not attach to the browser at http://127.0.0.1:9222` | Nothing is listening on the port. Run `python -m dspark edge` first. It opens its **own** browser profile, so any Edge or Chrome you already have open is left alone — no need to close anything. |
-| `Not logged in`, on a browser that looks signed in | The dspark profile is a separate browser profile from your everyday one, so it needs its own single sign-in. Do it in the window `dspark edge` opened. |
-| `status` says the session expired | Douyin logs sessions out. `python -m dspark login` again. |
-| `Conversations found: 0` | `CONVERSATION_ITEM` is stale. Run `probe` and compare. |
-| The scan finds far fewer conversations than you have | The list is virtualised and the scroll may be stopping early. Run with `-v` and check the `rewound`/`scroll` lines. |
-| `Could not find 'X' in the list` | The search could not reach that row. Run with `-v` to see the sweep range; the search rewinds and sweeps twice, so a persistent miss means the row is not in the list it is scanning. |
-| It messages the wrong person | `CONVERSATION_ITEM` is matching too broadly. Tighten it using `probe` output. |
-| Nothing gets sent, no error | The composer selector is wrong, or the page needs the send button rather than Enter. Check with `-v`. |
-| Worked for a week, then stopped | Douyin shipped a redesign. `probe` again; it is a selector fix, not a rewrite. |
+| `Playwright is not installed` | `pip install -r requirements.txt`，然后 `python -m playwright install chromium` |
+| `Could not attach to the browser at http://127.0.0.1:9222` | 端口上没东西在监听。先跑 `python -m dspark edge`，它会开**自己的**浏览器 profile，所以你已经开着的 Edge / Chrome 完全不受影响——**不需要关任何东西**。 |
+| 浏览器明明登录了，却报 `Not logged in` | dspark 用的 profile 和你的日常 profile 是分开的，所以需要**单独登录一次**。在 `dspark edge` 打开的那个窗口里登录即可。 |
+| `status` 说会话失效了 | 抖音会登出。重新跑 `python -m dspark login`。 |
+| `Conversations found: 0` | `CONVERSATION_ITEM` 过期了。跑 `probe` 对比。 |
+| 扫描到的会话数远少于实际 | 列表是虚拟化的，滚动可能提前停了。加 `-v` 看 `rewound` / `scroll` 那几行。 |
+| `Could not find 'X' in the list` | 搜索没能够到那一行。加 `-v` 看扫描范围；查找会回顶部并扫两遍，所以**持续**找不到说明那一行确实不在它扫描的列表里。 |
+| 发给了错误的人 | `CONVERSATION_ITEM` 匹配过宽。用 `probe` 的输出收紧它。 |
+| 什么都没发，也没报错 | 输入框选择器不对，或者这个页面需要用发送按钮而不是回车。加 `-v` 看。 |
+| 用了一周突然不工作了 | 抖音改版了。重跑 `probe`；这是改选择器的事，不是重写。 |
 
-Add `-v` to any command to watch every page action:
+任何命令加 `-v` 都能看到每一个页面动作：
 
 ```bash
 python -m dspark send -v
@@ -483,10 +422,8 @@ python -m dspark send -v
 
 ---
 
-## Reference
+## 参考
 
-The `data-e2e` approach, the `storageState` login, and the keyboard-shortcut
-technique (`z` to like, `ArrowDown` for the next video, `x` to close a panel)
-all come from reading [laizan](https://github.com/GHkmmm/laizan), a
-Playwright-based Douyin tool. Its `src/main/elements/douyin.ts` is worth
-skimming if you plan to extend this.
+`data-e2e` 的思路、`storageState` 登录，以及键盘快捷键技巧（`z` 点赞、`ArrowDown` 下一个视频、`x` 关闭面板）都来自阅读 [laizan](https://github.com/GHkmmm/laizan)——一个基于 Playwright 的抖音工具。如果你打算继续扩展本项目，它的 `src/main/elements/douyin.ts` 值得一读。
+
+本项目使用 [MIT 许可证](LICENSE)。
