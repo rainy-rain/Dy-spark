@@ -113,12 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     edge_cmd = sub.add_parser(
         "edge",
         parents=[common],
-        help="get an attachable Edge/Chrome running (opens the debugging port)",
-    )
-    edge_cmd.add_argument(
-        "--force",
-        action="store_true",
-        help="close a running browser first (loses unsaved tabs)",
+        help="open a browser with the debugging port on (leaves other windows alone)",
     )
     edge_cmd.add_argument(
         "--port",
@@ -176,7 +171,6 @@ def main(argv: list[str] | None = None) -> int:
         from . import cdp
 
         return cdp.run(
-            force=args.force,
             port=args.port,
             profile=Path(args.profile) if args.profile else None,
         )

@@ -54,15 +54,6 @@ CHROME_PATHS = (
     Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
 )
 
-# Closing someone else's browser loses their tabs, so this is never implicit.
-FORCE_HINT = (
-    "The browser is running without the debugging port, so the port is closed and\n"
-    "every attach will fail. Close it completely (every window, and the tray icon),\n"
-    "then run this command again.\n\n"
-    "To let dspark do it for you — which closes every window and loses any\n"
-    "unsaved tabs — add --force."
-)
-
 
 def find_browser() -> tuple[Path, str] | None:
     """The first installed Chromium-family browser, with its name."""
@@ -90,37 +81,6 @@ def devtools_version(port: int = DEFAULT_PORT) -> dict | None:
             return json.loads(response.read().decode("utf-8", "replace"))
     except (urllib.error.URLError, OSError, ValueError):
         return None
-
-
-def browser_running() -> bool:
-    """Any Edge or Chrome process at all."""
-    for name in ("msedge.exe", "chrome.exe"):
-        try:
-            result = subprocess.run(
-                ["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if name.lower() in (result.stdout or "").lower():
-            return True
-    return False
-
-
-def close_browsers() -> None:
-    """Ask every Edge/Chrome window to go away. Destructive: tabs are lost."""
-    for name in ("msedge.exe", "chrome.exe"):
-        try:
-            subprocess.run(
-                ["taskkill", "/IM", name, "/F"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError):
-            pass
 
 
 def launch(exe: Path, port: int = DEFAULT_PORT, profile: Path | None = None) -> Path:
@@ -166,13 +126,25 @@ def wait_for_devtools(port: int = DEFAULT_PORT, timeout_s: float = 25.0) -> dict
     return None
 
 
-def run(force: bool = False, port: int = DEFAULT_PORT, profile: Path | None = None) -> int:
-    """The `edge` command: make an attachable browser available."""
+def run(port: int = DEFAULT_PORT, profile: Path | None = None) -> int:
+    """The `edge` command: make an attachable browser available, hands-off.
+
+    There is deliberately no "is a browser already running?" check, and no
+    --force. Both existed only because an early version launched with the
+    *default* profile, where a running Edge swallows the debugging-port switch.
+    This version always passes its own `--user-data-dir`, and Edge keeps one
+    browser process per profile — so the dspark browser and whatever the user
+    already has open simply coexist.
+
+    Measured: with seven msedge.exe processes already running, launching this
+    profile opened port 9222 on the very first probe. Refusing in that situation
+    was precisely why a one-click wrapper did not work in one click.
+    """
     console.step("Attachable browser")
 
     profile = Path(profile) if profile else DEFAULT_PROFILE
 
-    # Already good? Say so and stop. Nothing is launched or closed.
+    # Already good? Nothing to launch.
     info = devtools_version(port)
     if info:
         console.ok(f"{info.get('Browser', 'browser')} is already listening on {port}.")
@@ -192,25 +164,13 @@ def run(force: bool = False, port: int = DEFAULT_PORT, profile: Path | None = No
     console.info(f"port    : {port}  (not listening)")
     console.info(f"profile : {profile}  ({'new' if fresh else 'existing'})")
     console.info("")
-    console.info(
-        "A separate profile is required: Edge 136+ refuses the debugging port on"
-    )
-    console.info("the default one, on purpose, so signed-in sessions cannot be")
-    console.info("attached to by other programs. The cost is one sign-in here.")
-
-    if browser_running():
-        if not force:
-            console.warn(f"{name} is already running.")
-            console.info("")
-            for line in FORCE_HINT.splitlines():
-                console.info(line)
-            return 1
-
-        console.warn(f"Closing every {name} window (--force). Unsaved tabs are lost.")
-        close_browsers()
-        time.sleep(2.5)
-
+    console.info("This opens its own browser profile, so any Edge or Chrome you")
+    console.info("already have open is left exactly as it is. A separate profile is")
+    console.info("also required: Edge 136+ refuses the debugging port on the default")
+    console.info("one, on purpose, so signed-in sessions cannot be attached to by")
+    console.info("other programs. The cost is a single sign-in, once.")
     console.info("")
+
     console.info(f"Launching {name} with --remote-debugging-port={port} ...")
     launch(exe, port, profile)
 
@@ -218,10 +178,8 @@ def run(force: bool = False, port: int = DEFAULT_PORT, profile: Path | None = No
     info = wait_for_devtools(port)
     if not info:
         console.error("The port never opened.")
-        console.info("")
         console.info(f"Check that {name} actually started, then re-run.")
-        console.info(f"If it did start, confirm the profile is not the default one:")
-        console.info(f"    {profile}")
+        console.info(f"Also confirm the profile is not the default one: {profile}")
         return 1
 
     console.ok(f"Ready: {info.get('Browser', name)} on port {port}")

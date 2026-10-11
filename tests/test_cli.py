@@ -62,7 +62,7 @@ class EveryCommandAcceptsSharedOptionsTests(unittest.TestCase):
         ["analyze"],
         ["analyze", "some.html"],
         ["edge"],
-        ["edge", "--force"],
+        ["edge", "--port", "9333"],
     ]
 
     def test_cdp_is_accepted_after_each_subcommand(self) -> None:
@@ -79,15 +79,20 @@ class EveryCommandAcceptsSharedOptionsTests(unittest.TestCase):
 
 
 class ExistingArgumentsStillWorkTests(unittest.TestCase):
-    def test_edge_force_and_port(self) -> None:
-        args = build_parser().parse_args(["edge", "--force", "--port", "9333"])
-        self.assertTrue(args.force)
+    def test_edge_port(self) -> None:
+        args = build_parser().parse_args(["edge", "--port", "9333"])
         self.assertEqual(args.port, 9333)
 
     def test_edge_defaults(self) -> None:
         args = build_parser().parse_args(["edge"])
-        self.assertFalse(args.force)
         self.assertEqual(args.port, 9222)
+
+    def test_edge_has_no_force_flag(self) -> None:
+        """--force existed only to close a browser before using the *default*
+        profile. The dedicated profile coexists with a running browser, so the
+        flag is gone — and with it, the ability to lose someone's open tabs."""
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["edge", "--force"])
 
     def test_send_yes(self) -> None:
         self.assertTrue(build_parser().parse_args(["send", "--yes"]).yes)

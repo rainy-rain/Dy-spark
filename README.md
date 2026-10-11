@@ -14,7 +14,7 @@ python -m dspark send --yes   # actually send
 Repair tools, for when Douyin changes something:
 
 ```
-python -m dspark edge         # open Edge's debugging port so --cdp can attach
+python -m dspark edge         # open a browser with the debugging port on
 python -m dspark pick         # click a page element, get its selector
 python -m dspark probe        # dump the whole page
 python -m dspark analyze      # work out selectors from a dump, offline
@@ -35,7 +35,7 @@ that actually came off the live site, and the confidence varies by part:
 | Chat rows and the spark badge | **Verified** — markup copied from DevTools, see below |
 | The composer (Slate editor) | **Verified** — markup copied from DevTools, see below |
 | Config loading and validation, error messages | **Verified** — every failure path tested |
-| Dry-run, rate limiting, the two switches, variant filter | **Verified** — 53 offline tests |
+| Dry-run, rate limiting, the two switches, variant filter | **Verified** — 82 offline tests |
 
 Every selector now comes from markup that was actually read off the live site.
 What remains untested is only the *interaction*: whether Slate accepts the
@@ -465,8 +465,12 @@ strategies including the per-run cap. No browser and no network needed.
 |---|---|
 | `config file not found` | `cp config.example.yaml config.yaml` |
 | `Playwright is not installed` | `pip install -r requirements.txt` then `python -m playwright install chromium` |
+| `Could not attach to the browser at http://127.0.0.1:9222` | Nothing is listening on the port. Run `python -m dspark edge` first. It opens its **own** browser profile, so any Edge or Chrome you already have open is left alone — no need to close anything. |
+| `Not logged in`, on a browser that looks signed in | The dspark profile is a separate browser profile from your everyday one, so it needs its own single sign-in. Do it in the window `dspark edge` opened. |
 | `status` says the session expired | Douyin logs sessions out. `python -m dspark login` again. |
 | `Conversations found: 0` | `CONVERSATION_ITEM` is stale. Run `probe` and compare. |
+| The scan finds far fewer conversations than you have | The list is virtualised and the scroll may be stopping early. Run with `-v` and check the `rewound`/`scroll` lines. |
+| `Could not find 'X' in the list` | The search could not reach that row. Run with `-v` to see the sweep range; the search rewinds and sweeps twice, so a persistent miss means the row is not in the list it is scanning. |
 | It messages the wrong person | `CONVERSATION_ITEM` is matching too broadly. Tighten it using `probe` output. |
 | Nothing gets sent, no error | The composer selector is wrong, or the page needs the send button rather than Enter. Check with `-v`. |
 | Worked for a week, then stopped | Douyin shipped a redesign. `probe` again; it is a selector fix, not a rewrite. |
