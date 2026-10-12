@@ -65,7 +65,7 @@ echo.
 echo          0  =  send text that I type now
 echo          1  =  exit, send nothing
 echo          2  =  send the emoji from Douyin's panel
-echo                (sending.emoji_label, default: 续火花^)
+echo                (sending.emoji_label, default: 续火花)
 echo ============================================================
 echo.
 
