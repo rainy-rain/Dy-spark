@@ -828,20 +828,326 @@ async def _send_to(cfg: Config, session: Any, convo: Conversation, message: str)
         return False
 
 
+# Reads the composer as {text, images}. The image count matters for emoji mode:
+# an inserted emoji is an <img>, so it leaves `innerText` empty while very much
+# being content. A text-only emptiness check would call it "nothing there".
+_COMPOSER_STATE_JS = """
+() => {
+  const el = document.querySelector(
+    'div[data-e2e="msg-input"] [data-slate-editor="true"], '
+    + 'div[data-slate-editor="true"][contenteditable="true"], '
+    + 'div[contenteditable="true"], textarea'
+  );
+  if (!el) return null;
+  const raw = ('value' in el && el.value !== undefined)
+    ? el.value : (el.innerText || el.textContent || '');
+  return {
+    text: String(raw).replace(/[\\u200b-\\u200d\\ufeff]/g, ''),
+    images: el.querySelectorAll('img').length,
+  };
+}
+"""
+
+# Counts what is already in the conversation. This is the honest way to tell
+# whether an emoji actually went out: an emoji may land in the composer and need
+# sending, or the panel may send it on click, and guessing which would mean
+# guessing about delivery.
+_MESSAGE_LIST_STATE_JS = """
+() => {
+  const el = document.querySelector(
+    '[class*="messageMessageListwrapper"], [class*="MessageListwrapper"]'
+  );
+  if (!el) return null;
+  return {
+    images: el.querySelectorAll('img').length,
+    chars: (el.innerText || '').length,
+  };
+}
+"""
+
+
+async def _message_list_state(page: Any) -> dict[str, Any] | None:
+    try:
+        result = await page.evaluate(_MESSAGE_LIST_STATE_JS)
+    except Exception as exc:
+        console.verbose(f"message list read failed: {exc}")
+        return None
+    return result if isinstance(result, dict) else None
+
+
+async def _composer_state(page: Any) -> dict[str, Any] | None:
+    try:
+        result = await page.evaluate(_COMPOSER_STATE_JS)
+    except Exception as exc:
+        console.verbose(f"composer state read failed: {exc}")
+        return None
+    return result if isinstance(result, dict) else None
+
+
+async def _composer_images(page: Any) -> int:
+    state = await _composer_state(page)
+    return int((state or {}).get("images", 0))
+
+
+# What of the emoji UI is still covering the page. Checked in JS rather than
+# with a locator wait so it costs nothing on the happy path — this runs once per
+# friend.
+#
+# Two separate things, because they get out of step. The panel content can
+# disappear while the modal *overlay* stays behind, still swallowing every click
+# on the page. Watching only the panel missed that state completely: the code
+# concluded there was nothing to clear, and the next click on a conversation
+# timed out with "semi-modal-wrap ... intercepts pointer events".
+_EMOJI_MODAL_JS = """
+() => {
+  const visible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  return {
+    panel: visible(document.querySelector('[class~="componentsemojiemojiPanel"]')),
+    overlay: visible(
+      document.querySelector('#pc-im-popup-container .semi-modal-wrap')
+    ),
+  };
+}
+"""
+
+
+async def _emoji_modal_state(page: Any) -> dict[str, bool]:
+    blank = {"panel": False, "overlay": False}
+    try:
+        result = await page.evaluate(_EMOJI_MODAL_JS)
+    except Exception:
+        return blank
+    if not isinstance(result, dict):
+        return blank
+    return {
+        "panel": bool(result.get("panel")),
+        "overlay": bool(result.get("overlay")),
+    }
+
+
+async def _emoji_panel_open(page: Any) -> bool:
+    return (await _emoji_modal_state(page))["panel"]
+
+
+async def _open_emoji_panel(session: Any) -> bool:
+    """Click the 😀 button and wait for the panel to appear."""
+    page = session.page
+
+    # The button toggles, so clicking while the panel is already open closes it.
+    if await _emoji_panel_open(page):
+        console.verbose("the emoji panel was already open")
+        return True
+
+    try:
+        await page.locator(selectors.EMOJI_BUTTON).first.click(timeout=8000)
+    except Exception as exc:
+        console.verbose(f"emoji button click failed: {exc}")
+        return False
+
+    if await _visible(page, selectors.EMOJI_PANEL, timeout_ms=8000):
+        return True
+    console.verbose("the emoji panel did not appear after the click")
+    return False
+
+
+async def _close_emoji_panel(cfg: Config, session: Any) -> None:
+    """Make sure nothing of the emoji UI is sitting over the page.
+
+    This matters more than it looks. The panel is a modal: while it is up it
+    intercepts pointer events across the whole page, so a leftover one makes the
+    next click on a conversation fail with "semi-modal-wrap ... intercepts
+    pointer events".
+
+    Every alternative was tried against a genuinely stuck one. Measured, with
+    `document.elementFromPoint` over the toggle's own coordinates reporting
+    `onTop: div.semi-modal-wrap`:
+
+      * Escape — nothing
+      * a plain Playwright click on the toggle — blocked, and correctly so: the
+        wrapper really is on top of the button
+      * a JS-dispatched mousedown/mouseup/click — dispatched, ignored
+      * reloading the chat page — clears it completely
+
+    The overlay and the panel appear together, so the toggle is unreachable
+    whenever there is anything to close: the check below skips straight to the
+    reload rather than burning a timeout discovering that again. Reloading costs
+    a few seconds per friend, which is real but is the price of the state being
+    recoverable at all — and it happens before the next conversation is opened,
+    so nothing depends on the list at that moment.
+    """
+    page = session.page
+
+    state = await _emoji_modal_state(page)
+    if not (state["panel"] or state["overlay"]):
+        return
+
+    # Reachable only in the (unobserved) case of a panel with no overlay.
+    if state["panel"] and not state["overlay"]:
+        try:
+            await page.locator(selectors.EMOJI_BUTTON).first.click(timeout=4000)
+            await asyncio.sleep(0.4)
+        except Exception as exc:
+            console.verbose(f"the emoji toggle is not reachable: {exc}")
+        state = await _emoji_modal_state(page)
+        if not (state["panel"] or state["overlay"]):
+            return
+
+    console.verbose(
+        "the emoji UI will not close "
+        f"(panel={state['panel']}, overlay={state['overlay']}); reloading"
+    )
+    try:
+        await page.goto(cfg.douyin.messages_url, wait_until="domcontentloaded")
+    except Exception as exc:
+        console.verbose(f"reload failed: {exc}")
+        return
+    await _visible(page, selectors.MESSAGE_LIST, timeout_ms=15000)
+
+    state = await _emoji_modal_state(page)
+    if state["panel"] or state["overlay"]:
+        console.verbose("the emoji UI is STILL up after a reload")
+    else:
+        console.verbose("reloaded, and the page is clear")
+
+
+async def _pick_emoji(page: Any, label: str) -> tuple[Any | None, str]:
+    """The panel entry whose visible label matches, by name and not position.
+
+    Douyin reorders and adds entries, so "the first one" is not a stable answer
+    to "the 续火花 emoji". When nothing matches, the labels that *were* found are
+    logged, because that is the one piece of information needed to fix it.
+    """
+    items = page.locator(selectors.EMOJI_ITEM)
+    count = await items.count()
+    if count == 0:
+        return None, ""
+
+    wanted = label.strip()
+    labels: list[str] = []
+
+    for index in range(count):
+        item = items.nth(index)
+        text = ""
+        try:
+            text = (
+                await item.locator(selectors.EMOJI_ITEM_DESC).first.inner_text(
+                    timeout=1500
+                )
+            ).strip()
+        except Exception:
+            continue
+        if text:
+            labels.append(text)
+        if text == wanted:
+            return item, text
+
+    console.verbose(f"emoji labels in the panel: {', '.join(labels) or '(unreadable)'}")
+    return None, ""
+
+
+async def _click_send_button(session: Any) -> bool:
+    page = session.page
+    button = page.locator(selectors.SEND_BUTTON).first
+    try:
+        if not await button.count():
+            console.verbose("no send button found")
+            return False
+        await button.click(timeout=8000)
+        return True
+    except Exception as exc:
+        console.verbose(f"send button click failed: {exc}")
+        return False
+
+
+async def _send_emoji(cfg: Config, session: Any, convo: Conversation) -> bool:
+    """Send one emoji to one conversation, verified against the conversation.
+
+    Deliberately not verified against an assumption about the panel. Two
+    behaviours are plausible — the emoji lands in the composer and needs sending,
+    or the panel sends it on click — and from here they are indistinguishable
+    until something arrives. So the check is the conversation itself: an emoji is
+    an image, so count the images in the message list before and after.
+    """
+    page = session.page
+
+    try:
+        # The panel is a modal. While it is open it intercepts pointer events
+        # over the conversation list, so one left behind by an interrupted run
+        # makes the very FIRST click of the next run fail — which is exactly what
+        # happened. Clearing it up front costs a fraction of a second.
+        await _close_emoji_panel(cfg, session)
+
+        if not await _open_conversation(cfg, session, convo):
+            console.warn(f"Could not find {convo.name!r} in the list.")
+            return False
+        await asyncio.sleep(1.5)
+
+        before = await _message_list_state(page)
+
+        if not await _open_emoji_panel(session):
+            console.warn("The emoji panel did not open.")
+            return False
+
+        item, label = await _pick_emoji(page, cfg.sending.emoji_label)
+        if item is None:
+            console.warn(
+                f"No emoji labelled {cfg.sending.emoji_label!r} in the panel. "
+                f"Set `sending.emoji_label` to one of the labels listed by -v."
+            )
+            await _close_emoji_panel(cfg, session)
+            return False
+
+        console.verbose(f"clicking the {label!r} emoji")
+        await item.click(timeout=8000)
+        await asyncio.sleep(1.2)
+
+        if await _composer_images(page):
+            console.verbose("the emoji landed in the composer; pressing send")
+            await _click_send_button(session)
+            await asyncio.sleep(1.2)
+
+        after = await _message_list_state(page)
+        if before is not None and after is not None:
+            if after["images"] > before["images"] or after["chars"] > before["chars"]:
+                await _close_emoji_panel(cfg, session)
+                return True
+
+        if await _composer_images(page):
+            console.verbose("the emoji is still sitting in the composer, unsent")
+        else:
+            console.verbose("the conversation did not gain an image")
+        await _close_emoji_panel(cfg, session)
+        return False
+    except Exception as exc:
+        console.verbose(f"emoji send to {convo.name} failed: {exc}")
+        return False
+
+
 async def send(
-    cfg: Config, *, confirmed: bool, message: str | None = None
+    cfg: Config,
+    *,
+    confirmed: bool,
+    message: str | None = None,
+    emoji: bool = False,
 ) -> int:
     console.step("Send")
 
     dry_run = not confirmed
 
-    # `--message` replaces the configured pool for this run. The one-click
-    # wrapper asks for the text at the keyboard, and typing it there beats
-    # editing config.yaml and starting over.
-    pool = [message] if message else list(cfg.sending.messages)
-    if not pool:
-        console.error("Nothing to send: pass --message, or set sending.messages.")
-        return 1
+    # Two ways to send, needing different things: text mode needs a message,
+    # emoji mode needs a label and no text at all. A text pool is only built for
+    # text mode, so an empty `sending.messages` is fine when --emoji is used.
+    pool: list[str] = []
+    if not emoji:
+        pool = [message] if message else list(cfg.sending.messages)
+        if not pool:
+            console.error("Nothing to send: pass --message, or set sending.messages.")
+            console.info("  Or use --emoji to send the emoji from the panel instead.")
+            return 1
 
     # The switch guards *sending*, not inspecting. A dry run sends nothing, so
     # requiring `sending.enabled` for it only stops people from looking before
@@ -894,23 +1200,35 @@ async def send(
 
         if not dry_run:
             # Say plainly what is about to go out, before it goes out.
-            what = pool[0] if len(pool) == 1 else f"one of {len(pool)} variants"
-            console.info(f"message: {what!r}")
+            if emoji:
+                console.info(f"message: the {cfg.sending.emoji_label!r} emoji")
+            else:
+                what = pool[0] if len(pool) == 1 else f"one of {len(pool)} variants"
+                console.info(f"message: {what!r}")
 
         sent = 0
         failed = 0
 
         for position, convo in enumerate(targets, start=1):
-            text = random.choice(pool)
+            text = random.choice(pool) if pool else ""
             label = f"[{position}/{len(targets)}]"
+            if emoji:
+                what = f"the {cfg.sending.emoji_label!r} emoji"
+            else:
+                what = repr(text)
 
             if dry_run:
-                console.info(f"{label} would send {text!r} to {convo.name}")
+                console.info(f"{label} would send {what} to {convo.name}")
                 continue
 
-            if await _send_to(cfg, session, convo, text):
+            if emoji:
+                ok = await _send_emoji(cfg, session, convo)
+            else:
+                ok = await _send_to(cfg, session, convo, text)
+
+            if ok:
                 sent += 1
-                console.ok(f"{label} sent {text!r} to {convo.name}")
+                console.ok(f"{label} sent {what} to {convo.name}")
             else:
                 failed += 1
                 console.warn(f"{label} could not send to {convo.name}")

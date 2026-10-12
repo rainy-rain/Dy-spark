@@ -95,16 +95,31 @@ class ValidationTests(unittest.TestCase):
             sender(strategy="list", targets="[]")
         self.assertIn("targets", str(ctx.exception))
 
-    def test_enabled_sending_needs_messages(self) -> None:
-        with self.assertRaises(ConfigError) as ctx:
-            load(
-                """
+    def test_enabled_sending_without_messages_is_allowed(self) -> None:
+        """Emoji mode means "nothing to type" is a valid configuration.
+
+        This used to raise. That was correct while text was the only way to send,
+        and wrong the moment `--emoji` existed: a run that sends the 续火花 emoji
+        from the panel needs no message text at all, so the check rejected a
+        perfectly usable config. `send` reports an empty pool at the point it
+        actually matters instead.
+        """
+        cfg = load(
+            """
 sending:
   enabled: true
   messages: []
 """
-            )
-        self.assertIn("messages", str(ctx.exception))
+        )
+        self.assertTrue(cfg.sending.enabled)
+        self.assertEqual(cfg.sending.messages, [])
+
+    def test_emoji_label_defaults_to_the_streak_emoji(self) -> None:
+        self.assertEqual(load("{}").sending.emoji_label, "续火花")
+
+    def test_emoji_label_can_be_overridden(self) -> None:
+        cfg = load("sending:\n  emoji_label: 比心\n")
+        self.assertEqual(cfg.sending.emoji_label, "比心")
 
     def test_inverted_range_is_rejected(self) -> None:
         with self.assertRaises(ConfigError) as ctx:

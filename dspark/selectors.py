@@ -121,14 +121,73 @@ MESSAGE_INPUT = (
     'div[contenteditable="true"]'
 )
 
-# Only used if Enter does not send. The inner span carries data-enter="true",
-# which suggests Enter is wired up, so this should normally go unused.
+# Only used if Enter does not send.
+#
+# VERIFIED from DevTools — and it corrected a real mistake. The control is an
+# <svg>, not a <button>:
+#
+#   <svg width="36" height="36" fill="none" viewBox="4 5 27 27"
+#        class="messageMsgInputpublishBtn e2e-send-send-msg-btn">…</svg>
+#
+# The earlier version looked for `button` elements inside the input row and so
+# could never have matched anything: the fallback path was dead code that would
+# have failed silently if Enter had ever stopped working.
 SEND_BUTTON = (
-    "div.messageMsgInputinputAction button, "
+    "svg.e2e-send-send-msg-btn, "
+    "svg.messageMsgInputpublishBtn, "
+    '[class~="e2e-send-send-msg-btn"], '
+    '[class~="messageMsgInputpublishBtn"], '
     'div[data-e2e="msg-input"] button, '
-    '[data-e2e="message-send"], '
-    'button:has-text("发送")'
+    '[data-e2e="message-send"]'
 )
+
+# ==========================================================================
+# Emoji panel — VERIFIED from DevTools on a logged-in /chat
+# ==========================================================================
+
+# The 😀 button that opens the panel, in the same action row as the file
+# uploader and the send button:
+#
+#   <div class="messageMsgInputinputAction">
+#     <div class="semi-upload MsgInputFileuploadim-saas-fileUploader">…</div>
+#     <svg class="messageMsgInputiconAction">…</svg>                      <- this
+#     <svg class="messageMsgInputpublishBtn e2e-send-send-msg-btn">…</svg>
+#   </div>
+EMOJI_BUTTON = (
+    'div[data-e2e="msg-input"] svg[class~="messageMsgInputiconAction"], '
+    'svg[class~="messageMsgInputiconAction"], '
+    '[class~="messageMsgInputiconAction"]'
+)
+
+# The panel that opens. Every item carries a *text* label, which is what makes
+# picking one robust instead of positional:
+#
+#   <div class="componentsemojiemojiPanel">
+#     <div class="componentsemojiTabPanel">…</div>
+#     <div class="emojiEmojiItememojiItem">
+#       <div class="emojiEmojiItememojiImgBox" data-apm-action="EmojiItem">
+#         <img class="commonMyImageimgReal" src="…">
+#       </div>
+#       <div class="emojiEmojiItememojiItemDesc">续火花</div>
+#     </div>
+#   </div>
+#
+# `[class~=...]` (exact word) rather than `[class*=...]`, because the substring
+# form would also match `emojiEmojiItememojiItemDesc` — the label, not the item.
+EMOJI_PANEL = (
+    "div.componentsemojiemojiPanel, "
+    '[class~="componentsemojiemojiPanel"], '
+    "[class*='emojiPanel']"
+)
+
+# Class-only on purpose. `[data-apm-action="EmojiItem"]` sits on the *inner*
+# image box, so listing it as an alternative would match every entry twice.
+EMOJI_ITEM = 'div[class~="emojiEmojiItememojiItem"]'
+EMOJI_ITEM_DESC = (
+    'div[class~="emojiEmojiItememojiItemDesc"], '
+    '[class~="emojiEmojiItememojiItemDesc"]'
+)
+EMOJI_ITEM_IMAGE = 'img[class~="commonMyImageimgReal"], [class*="emojiImgBox"] img'
 
 # ==========================================================================
 # Login

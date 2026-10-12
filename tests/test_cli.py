@@ -111,6 +111,16 @@ class ExistingArgumentsStillWorkTests(unittest.TestCase):
         args = build_parser().parse_args(["send", "--message", "晚上好"])
         self.assertEqual(args.message, "晚上好")
 
+    def test_send_emoji_flag(self) -> None:
+        self.assertTrue(build_parser().parse_args(["send", "--emoji"]).emoji)
+        self.assertFalse(build_parser().parse_args(["send"]).emoji)
+
+    def test_send_emoji_and_message_are_independent(self) -> None:
+        """Option 2 in the wrapper passes --emoji and no --message at all."""
+        args = build_parser().parse_args(["send", "--yes", "--emoji"])
+        self.assertTrue(args.emoji)
+        self.assertIsNone(args.message)
+
     def test_analyze_optional_html(self) -> None:
         self.assertEqual(
             build_parser().parse_args(["analyze", "dump.html"]).html, "dump.html"

@@ -150,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Useful when the message is decided at the keyboard."
         ),
     )
+    send.add_argument(
+        "--emoji",
+        action="store_true",
+        help=(
+            "send the emoji named by sending.emoji_label (default 续火花) from "
+            "Douyin's emoji panel, instead of typing any text"
+        ),
+    )
 
     return parser
 
@@ -209,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
             "scan": lambda: streak.scan(cfg),
             "pick": lambda: picker.run(cfg),
             "send": lambda: streak.send(
-                cfg, confirmed=args.yes, message=args.message
+                cfg, confirmed=args.yes, message=args.message, emoji=args.emoji
             ),
         }
 

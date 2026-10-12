@@ -6,7 +6,8 @@
 python -m dspark login        # 扫一次二维码
 python -m dspark scan         # 列出每个会话，以及有没有火花
 python -m dspark send         # 空跑：只列出会发给谁，不发送
-python -m dspark send --yes   # 真正发送
+python -m dspark send --yes   # 真正发送（打字文案）
+python -m dspark send --yes --emoji   # 改发表情面板里的「续火花」表情
 ```
 
 抖音改版时用的排查工具：
@@ -18,7 +19,13 @@ python -m dspark probe        # 把整个页面 dump 下来
 python -m dspark analyze      # 离线从 dump 里推断选择器
 ```
 
-嫌麻烦可以直接双击 `scan.bat`：它会自动把浏览器准备好 → 扫描 → 问你要不要发 → 让你输入文案 → 发送。
+嫌麻烦可以直接双击 `scan.bat`：它会自动把浏览器准备好 → 扫描 → 问你要怎么做：
+
+```
+       0  =  输入文字发送
+       1  =  退出，什么都不发
+       2  =  发送抖音表情面板里的「续火花」表情
+```
 
 ---
 
@@ -33,6 +40,7 @@ python -m dspark analyze      # 离线从 dump 里推断选择器
 | 首页钩子：消息入口、登录按钮 | **已实测** |
 | 会话行与火花徽标 | **已实测** —— 标记从 DevTools 原样抄下来，见下 |
 | 输入框（Slate 编辑器） | **已实测** —— 标记从 DevTools 原样抄下来，见下 |
+| 表情面板、表情按钮、发送按钮 | **已实测** —— 面板能打开、23 个表情的标签能读出、「续火花」能按名字选中，见下 |
 | 配置加载与校验、错误信息 | **已实测** —— 每条失败路径都有测试 |
 | 空跑、限速、两道开关、变体过滤 | **已实测** —— 82 个离线测试 |
 
@@ -108,6 +116,33 @@ python -m dspark analyze      # 离线从 dump 里推断选择器
 | Slate **可能**拒绝合成输入 | `_send_to` 会读回输入框内容，文字没进去就拒绝按回车 |
 
 第二条是一个**差点上线的真 bug**：JS 的 `String.trim()` **不会**去掉 U+200B，所以每一次成功发送都会被误判为失败，然后还会去点一个毫无意义的备用发送按钮。现在有专门的测试钉住这段转义——因为**少写一个反斜杠**就会把 `[\u200b-…]` 变成 `[u200b-…]`，那就变成了匹配字母 u、2、0、b。
+
+输入区右侧的三个控件，以及表情面板，同样抄自 DevTools：
+
+```html
+<div class="messageMsgInputinputAction">
+  <div class="semi-upload MsgInputFileuploadim-saas-fileUploader">…</div>
+  <svg class="messageMsgInputiconAction">…</svg>                    <!-- 😀 表情按钮 -->
+  <svg class="messageMsgInputpublishBtn e2e-send-send-msg-btn">…</svg>  <!-- ↑ 发送按钮 -->
+</div>
+
+<div class="componentsemojiemojiPanel">                            <!-- 表情面板 -->
+  <div class="emojiEmojiItememojiItem">
+    <div class="emojiEmojiItememojiImgBox" data-apm-action="EmojiItem">
+      <img class="commonMyImageimgReal" src="…">
+    </div>
+    <div class="emojiEmojiItememojiItemDesc">续火花</div>            <!-- 文字标签 -->
+  </div>
+</div>
+```
+
+三点值得注意：
+
+1. **发送按钮是 `<svg>`，不是 `<button>`。** 原来的 `SEND_BUTTON` 只找 `button` 元素，所以**永远匹配不到任何东西**——回车失效时的备用路径其实是一段死代码。现在有了真实的选择器 `e2e-send-send-msg-btn`。
+
+2. **每个表情都带文字标签**，所以可以按名字选，而不是按位置。`[class~="emojiEmojiItememojiItem"]` 用的是精确词匹配（`~=`）而不是子串匹配（`*=`）——因为子串形式**也会匹配到 `emojiEmojiItememojiItemDesc`**，那是标签本身，不是表情。
+
+3. **面板是模态弹窗，打开时会拦截整页点击**，而且它的遮罩连自己的切换按钮都盖住。用 `document.elementFromPoint` 对准按钮坐标量过：`onTop: div.semi-modal-wrap`。Escape、点按钮、JS 派发点击全都无效，**只有重载页面能清掉**。
 
 登录流程相关的标记，同样是从真实页面读的：
 
@@ -315,6 +350,26 @@ python -m dspark send --yes
 
 第一次真实发送时保持 `browser.headless: false`，这样可以盯着看。
 
+### 步骤 6（可选）—— 改发表情
+
+不想打字，就发抖音表情面板里的「续火花」表情：
+
+```bash
+python -m dspark send --yes --emoji
+```
+
+流程是逐个好友：打开会话 → 点开表情面板 → **按文字标签**找到「续火花」并点击 → 如果它落在输入框里就按发送 → 关闭面板。
+
+几个实现上的要点，都是踩出来的：
+
+| 问题 | 处理 |
+|---|---|
+| 面板里第几个是「续火花」 | **按标签文字找，不按位置**。抖音会调整面板顺序，位置靠不住。找不到时会把面板里实际有哪些标签打出来，方便你改 `sending.emoji_label`。 |
+| 表情点下去是**直接发送**，还是**填进输入框**等发送？ | 不猜。发送前先数一次消息列表里的图片数，发送后再数一次——**表情就是图片**，多出来才算真的发出去了。两种行为都能正确处理。 |
+| 面板是个**模态弹窗**，打开时拦截整页点击 | 卡住时必须先清掉，否则下一次点击会话会失败。Escape 无效、点按钮无效（遮罩盖住了按钮，`document.elementFromPoint` 实测 `onTop: div.semi-modal-wrap`）、JS 派发点击也无效——**只有重载页面能清掉**。所以每次打开会话前都会先检查并恢复。中途 Ctrl+C 就会留下这个状态。 |
+
+> 重载页面每个好友要几秒。如果抖音选完表情后自己关掉面板，这一步就不会触发；只有面板留着的那些才会重载。
+
 ---
 
 ## 配置
@@ -331,7 +386,8 @@ python -m dspark send --yes
 | `sending.strategy` | `spark`（只发有火花的）· `list`（只发 `targets` 里的）· `all`（所有人） |
 | `sending.spark_variants` | 哪些火焰图标算数；留空 = 三种全算 |
 | `sending.targets` | 好友昵称，供 `list` 策略使用 |
-| `sending.messages` | 每个好友随机挑一条 |
+| `sending.messages` | 每个好友随机挑一条（`--emoji` 时用不到） |
+| `sending.emoji_label` | 表情模式要发哪个表情，按面板上的文字标签匹配（默认 `续火花`） |
 | `sending.delay_between_ms` | 两个好友之间的随机间隔 `[最小, 最大]` |
 | `sending.max_per_run` | 单次硬上限，不管策略选中了多少 |
 | `logging.verbose` | 打印每一个页面动作 |
@@ -366,7 +422,7 @@ python -m dspark send --yes
 
 ```
 DY-spark/
-├── scan.bat                一键：准备浏览器 → 扫描 → 询问 → 发送
+├── scan.bat                一键：准备浏览器 → 扫描 → 询问（打字 / 表情 / 退出）
 ├── config.example.yaml     模板；复制成 config.yaml
 ├── requirements.txt
 ├── dspark/
@@ -412,6 +468,8 @@ python -m unittest discover -s tests -t . -v
 | `Could not find 'X' in the list` | 搜索没能够到那一行。加 `-v` 看扫描范围；查找会回顶部并扫两遍，所以**持续**找不到说明那一行确实不在它扫描的列表里。 |
 | 发给了错误的人 | `CONVERSATION_ITEM` 匹配过宽。用 `probe` 的输出收紧它。 |
 | 什么都没发，也没报错 | 输入框选择器不对，或者这个页面需要用发送按钮而不是回车。加 `-v` 看。 |
+| 表情模式报 `No emoji labelled ...` | 面板里没有 `sending.emoji_label` 这个名字。加 `-v`，日志会列出面板里**实际有哪些**标签，照抄其中一个即可。 |
+| 表情模式点不开面板 | 可能有上一次留下的模态遮罩。工具每次都会先检查并自动重载恢复；如果频繁出现，加 `-v` 看 `the emoji UI will not close` 那几行。 |
 | 用了一周突然不工作了 | 抖音改版了。重跑 `probe`；这是改选择器的事，不是重写。 |
 
 任何命令加 `-v` 都能看到每一个页面动作：

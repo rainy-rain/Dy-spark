@@ -92,6 +92,13 @@ sending:
   # `send` prints a loud warning whenever this actually cuts someone out.
   max_per_run: 100
 
+  # Emoji mode. `python -m dspark send --emoji` (or option 2 in scan.bat) sends
+  # this emoji from Douyin's emoji panel instead of typing anything.
+  #
+  # Every entry in that panel carries a visible label, so this is matched by
+  # name. Position would break the moment Douyin reorders the panel.
+  emoji_label: 续火花
+
 
 # Anything printed in the terminal.
 logging:

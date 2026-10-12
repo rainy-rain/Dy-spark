@@ -4,7 +4,7 @@ rem  DY-spark  :  scan, then optionally send
 rem
 rem   1. checks a browser is attachable
 rem   2. scans the chat list and prints who has a spark
-rem   3. asks whether to send, and if so what to send
+rem   3. asks what to do: type a message, send the emoji, or exit
 rem
 rem  Double-click this file.
 rem ============================================================
@@ -62,8 +62,10 @@ echo.
 echo ============================================================
 echo  3/3   Send to the conversations that have a spark?
 echo.
-echo          0  =  yes, let me type what to send
-echo          1  =  no, just exit
+echo          0  =  send text that I type now
+echo          1  =  exit, send nothing
+echo          2  =  send the emoji from Douyin's panel
+echo                (sending.emoji_label, default: 续火花^)
 echo ============================================================
 echo.
 
@@ -71,9 +73,10 @@ set /a TRIES=0
 
 :choose
 set "CHOICE="
-set /p "CHOICE=Type 0 or 1, then press Enter: "
+set /p "CHOICE=Type 0, 1 or 2, then press Enter: "
 if "%CHOICE%"=="0" goto ask_message
 if "%CHOICE%"=="1" goto finish
+if "%CHOICE%"=="2" goto send_emoji
 
 rem Bounded on purpose. `set /p` sets nothing and returns immediately when the
 rem input is exhausted, so an unguarded loop spins forever reprinting the
@@ -85,7 +88,7 @@ if %TRIES% GEQ 5 (
   echo [i] No valid choice after 5 attempts - exiting without sending anything.
   goto finish
 )
-echo   Please type 0 or 1.
+echo   Please type 0, 1 or 2.
 goto choose
 
 :ask_message
@@ -105,6 +108,16 @@ echo  Press Ctrl+C if you want to stop.
 echo ------------------------------------------------------------
 echo.
 "%PY%" -m dspark send --cdp "%CDP%" --yes --message "%MSG%"
+goto finish
+
+:send_emoji
+echo.
+echo ------------------------------------------------------------
+echo  Sending the emoji now. Watch the browser window - the panel
+echo  opens and closes once per friend. Press Ctrl+C to stop.
+echo ------------------------------------------------------------
+echo.
+"%PY%" -m dspark send --cdp "%CDP%" --yes --emoji
 goto finish
 
 :finish

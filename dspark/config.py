@@ -83,6 +83,10 @@ class SendingConfig:
     # A grey flame sits on a 129-day streak, so grey is a *normal* list
     # appearance, not an absent streak - hence all three by default.
     spark_variants: list[str] = field(default_factory=list)
+    # The label of the emoji to send in emoji mode. Douyin's panel labels every
+    # entry, so this picks one by name instead of by position — position would
+    # break the moment the panel is reordered.
+    emoji_label: str = "续火花"
 
     VALID_STRATEGIES = ("spark", "list", "all")
 
@@ -103,11 +107,10 @@ class SendingConfig:
                 "`sending.strategy` is `list` but `sending.targets` is empty — "
                 "add the friend names you want to message, or switch to `spark`."
             )
-        if self.enabled and not self.messages:
-            raise ConfigError(
-                "`sending.enabled` is true but `sending.messages` is empty — "
-                "there is nothing to send."
-            )
+        # There used to be a hard "enabled but no messages" error here. Emoji mode
+        # made it wrong: a run that sends the 续火花 emoji needs no text at all, so
+        # the check would reject a perfectly valid configuration. `send` reports an
+        # empty message pool at the point it actually matters.
         if self.max_per_run < 1:
             raise ConfigError("`sending.max_per_run` must be at least 1")
 
@@ -174,6 +177,7 @@ class Config:
             spark_variants=_str_list(
                 sending_raw.get("spark_variants"), "sending.spark_variants"
             ),
+            emoji_label=str(sending_raw.get("emoji_label", "续火花")),
         )
         sending.validate()
 
