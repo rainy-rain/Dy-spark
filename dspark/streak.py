@@ -848,19 +848,33 @@ _COMPOSER_STATE_JS = """
 }
 """
 
-# Counts what is already in the conversation. This is the honest way to tell
-# whether an emoji actually went out: an emoji may land in the composer and need
-# sending, or the panel may send it on click, and guessing which would mean
-# guessing about delivery.
+# What the conversation looks like, for verifying that an emoji actually went.
+#
+# NOT a total count. The message list is virtualised as well — it renders about
+# a screenful of messages with a tall spacer standing in for the rest, and the
+# items are rotated 180deg for display. So a new message pushes an old one out
+# of the DOM and the totals do not budge: counting images reported "not sent"
+# for an emoji that had plainly arrived.
+#
+# What does hold: the DOM order is NEWEST FIRST (index 0 has the most recent
+# time label), so the newest message can be read directly.
 _MESSAGE_LIST_STATE_JS = """
 () => {
-  const el = document.querySelector(
-    '[class*="messageMessageListwrapper"], [class*="MessageListwrapper"]'
-  );
-  if (!el) return null;
+  const list = document.querySelector('[class*="messageMessageListwrapper"]');
+  if (!list) return null;
+
+  const items = list.querySelectorAll('[data-index]');
+  const newest = items.length ? items[0] : null;
+  const emojiImg = newest
+    ? newest.querySelector('img[class*="MessageItemEmoji"]')
+    : null;
+
   return {
-    images: el.querySelectorAll('img').length,
-    chars: (el.innerText || '').length,
+    rendered: items.length,
+    newestIsEmoji: Boolean(emojiImg),
+    newestEmojiSrc: emojiImg ? (emojiImg.src || '') : '',
+    newestText: newest ? (newest.innerText || '').slice(0, 40) : '',
+    emojiRendered: list.querySelectorAll('[class*="MessageItemEmoji"]').length,
   };
 }
 """
@@ -1105,21 +1119,49 @@ async def _send_emoji(cfg: Config, session: Any, convo: Conversation) -> bool:
         await item.click(timeout=8000)
         await asyncio.sleep(1.2)
 
+        # CONFIRMED behaviour: clicking a panel emoji sends it immediately. The
+        # composer stays empty — measured, after a real send — so the composer
+        # check below normally falls through to the newest-message check.
+        #
+        # It is kept because it costs nothing and it is the stronger signal if
+        # Douyin ever changes to insert-then-send: finding the emoji gone from
+        # the composer after clicking send is proof, with nothing for the
+        # virtualised list to invalidate.
         if await _composer_images(page):
             console.verbose("the emoji landed in the composer; pressing send")
             await _click_send_button(session)
             await asyncio.sleep(1.2)
 
+            if await _composer_images(page):
+                console.verbose("the emoji is still in the composer; it did not send")
+                await _close_emoji_panel(cfg, session)
+                return False
+
+            console.verbose("the composer emptied, so the emoji went")
+            await _close_emoji_panel(cfg, session)
+            return True
+
+        # The real path: the click sent it, so confirm it from the conversation.
+        #
+        # Totals are useless — the list is virtualised, so a new message pushes
+        # an old one out and the counts do not move. That is exactly how a
+        # successful send was reported as a failure. Compare the newest message
+        # instead; the src it lands with matches the panel's own src.
         after = await _message_list_state(page)
-        if before is not None and after is not None:
-            if after["images"] > before["images"] or after["chars"] > before["chars"]:
+        if before and after and after["newestIsEmoji"]:
+            changed = (
+                after["newestEmojiSrc"] != before["newestEmojiSrc"]
+                or after["newestText"] != before["newestText"]
+            )
+            if changed:
+                console.verbose("the newest message is now an emoji")
                 await _close_emoji_panel(cfg, session)
                 return True
 
-        if await _composer_images(page):
-            console.verbose("the emoji is still sitting in the composer, unsent")
-        else:
-            console.verbose("the conversation did not gain an image")
+        console.verbose(
+            "the composer stayed empty and the newest message did not change; "
+            "cannot confirm the emoji went"
+        )
         await _close_emoji_panel(cfg, session)
         return False
     except Exception as exc:
