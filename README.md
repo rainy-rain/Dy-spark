@@ -5,7 +5,6 @@
 **刚从 GitHub 下载下来？** 看 [从零开始（另一台电脑）](#从零开始另一台电脑)，那是完整的按顺序上手流程。
 
 ```
-python -m dspark doctor       # 检查环境：缺什么、怎么装、文档在哪
 python -m dspark edge         # 开一个可驱动的浏览器（不影响你已开的窗口）
 python -m dspark login        # 或者用自带的 Chromium，扫一次二维码
 python -m dspark scan         # 列出每个会话，以及有没有火花
@@ -14,7 +13,7 @@ python -m dspark send --yes   # 真正发送（打字文案）
 python -m dspark send --yes --emoji   # 改发表情面板里的「续火花」表情
 ```
 
-任何时候卡住了，先跑 `python -m dspark doctor`。它逐项检查 Python 版本、Playwright、浏览器、配置文件、登录状态和网络，每个失败项都给出解决步骤和文档链接。
+**不想碰命令行就直接双击 `scan.bat`。** 它的第 1 步会先把 8 项环境逐一检查一遍（Python、配置文件、Playwright、浏览器、Chromium、登录状态、调试端口、网络），每项给出 `[ok]` 或 `[!!]`，**没配好的那一项下面直接写着怎么修**——包括要执行的命令和下载地址。全部通过之后才会继续往下跑。
 
 抖音改版时用的排查工具：
 
@@ -235,7 +234,7 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.browsers" python -m playwright install chromium
 
 这是一次性的约 700 MB 下载，落在 `DY-spark/.browsers/`（已被 gitignore）。**这个环境变量只需要在安装时设一次**——`dspark/browser.py` 在运行时会自己找到 `.browsers/`，以后不用再 export。
 
-> **用 `dspark edge` + `--cdp` 的话，这 700 MB 可以不下。** 那条路径驱动的是你系统里已有的 Edge，不需要 Playwright 自带的 Chromium。`dspark doctor` 会把这一项标成警告而不是错误，原因就在这里。
+> **用 `dspark edge` + `--cdp` 的话，这 700 MB 可以不下。** 那条路径驱动的是你系统里已有的 Edge，不需要 Playwright 自带的 Chromium。所以 `scan.bat` 的第 1 步把这一项标成"不需要"而不是失败，原因就在这里。
 
 最后：
 
@@ -328,29 +327,41 @@ cp config.example.yaml config.yaml
 ### 第 5 步 —— 自检环境（推荐先做）
 
 ```powershell
-.venv\Scripts\python.exe -m dspark doctor
+scan.bat
 ```
 
-它会逐项检查，每一项都给出**状态 + 怎么修 + 文档链接**：
+或者直接双击它。**第 1 步会先把 8 项环境逐一检查一遍**，不需要你先登录任何东西：
 
 ```
---- Environment check ---
-[ok] python                        3.12 (need 3.10+)
-[ok] config.yaml                   config.yaml
-[ok] playwright                    installed
-[ok] browser                       Edge (C:\Program Files (x86)\Microsoft\Edge\...)
-[!!] chromium                      not installed (only needed for `login`)
-[!!] saved login                   none saved yet
-[!!] debug port                    nothing listening on http://127.0.0.1:9222
-[ok] network                       douyin.com reachable
+============================================================
+ 1/4   Environment check
+============================================================
 
---- Result ---
-[!] 3 thing(s) to know about — not fatal, but they will bite in some modes:
-[!] Playwright's bundled Chromium is not installed. ...
-[i] How to fix:
-[i]   1. If you use `python -m dspark edge` and pass --cdp, ignore this.
-...
-[ok] Nothing blocking. You can run dspark.
+ [1] Python 3.10 or newer
+        [ok] Python 3.12.10
+ [2] The config file, config.yaml
+        [ok] present
+ [3] The Playwright package
+        [ok] installed
+ [4] Microsoft Edge or Google Chrome
+        [ok] Edge found
+ [5] Playwright's own Chromium (only "login" needs it)
+        [ok] not installed, and not needed - Edge is enough
+             Only "python -m dspark login" would want it.
+ [6] Signed in to Douyin
+        [!!] NOT CONFIGURED - never signed in
+             Nothing to do right now. Step 2 opens a browser; in that
+             window go to https://www.douyin.com/chat and sign in once
+             with the Douyin app. It is remembered from then on.
+ [7] Debug port 9222
+        [!!] NOT CONFIGURED - nothing listening yet
+             Nothing to do right now. Step 2 starts it.
+ [8] Network access to douyin.com
+        [ok] reachable
+
+ ------------------------------------------------------------
+ All required checks passed. Continuing.
+ ------------------------------------------------------------
 ```
 
 怎么看结果：
@@ -358,17 +369,17 @@ cp config.example.yaml config.yaml
 | 标记 | 含义 |
 |---|---|
 | `[ok]` | 这一项没问题 |
-| `[!!]` | 需要注意，但**不一定**是错误——比如「还没开浏览器」在启动浏览器之前本来就是正常的 |
-| `--- Result ---` 下面有 `[x]` | **阻塞问题**，必须修好才能继续。每条都会列出解决步骤 |
-| 只有 `[!]` | 不阻塞，可以继续 |
+| `[!!]` **但你不需要现在处理** | 比如「还没登录」「端口还没开」——第 2 步会解决它，下面会写清楚 |
+| `[!!]` **并且列出了安装命令** | **阻塞问题**，必须修好才能继续 |
+| `%FAILED% required item(s) must be fixed first` | 有阻塞项，程序停在这里，窗口不会关 |
 
-退出码：有阻塞问题是 `1`，否则 `0`。所以脚本里可以用 `if errorlevel 1` 拦住。
+**每一项未配置时，下面都直接写着怎么修**——要执行的命令、下载地址、以及 README 的链接。不需要你再去别处找。
 
-只想检查「工具装齐了没有」、不检查浏览器和网络：
+几点说明：
 
-```powershell
-.venv\Scripts\python.exe -m dspark doctor --tools-only
-```
+- 检查是**按顺序全部跑完**的，不会在第一个问题上就停，所以你能一次看到所有缺什么
+- 有阻塞问题时退出码是 `1`，全部通过是 `0`
+- 这个检查是**纯批处理**实现的，不依赖 Python 能跑——所以「没装 Python」这种情况它也能查出来并告诉你怎么装
 
 ### 第 6 步 —— 启动一个能被驱动的浏览器，并登录
 
@@ -452,7 +463,7 @@ sending:
 环境弄好之后，日常用不着这些命令了——**双击 `scan.bat`** 就行。它会依次：
 
 ```
-1/4  环境检查（doctor --tools-only）——缺什么就停在这里，并告诉你怎么装
+1/4  环境检查 —— 8 项逐一过，缺什么就停在这里并写清怎么装
 2/4  启动可驱动的浏览器
 3/4  扫描聊天列表（不发送）
 4/4  问你要怎么做：0 输入文字 / 1 退出 / 2 发表情
@@ -474,7 +485,7 @@ sending:
 | `scan` 扫到的会话数比实际少 | 列表是虚拟化的，滚动可能提前停了。加 `-v` 看 `scroll` 那几行。 |
 | 一切看起来都正常，但发不出去 | 检查 `sending.enabled` **和** `--yes` 两个开关。 |
 
-还不行就跑 `doctor` 并把输出发出来——它已经把大部分可能性覆盖了。或者开 [Issues](https://github.com/rainy-rain/Dy-spark/issues)。
+还不行就把 `scan.bat` 第 1 步的完整输出发出来——8 项检查已经把大部分可能性覆盖了。或者开 [Issues](https://github.com/rainy-rain/Dy-spark/issues)。
 
 ---
 
@@ -677,7 +688,6 @@ DY-spark/
 ├── dspark/
 │   ├── __main__.py         CLI 入口              (python -m dspark)
 │   ├── config.py           加载 + 校验
-│   ├── doctor.py           环境自检：每项给状态 + 修复步骤 + 文档链接
 │   ├── links.py            文档 / 下载地址集中在一处
 │   ├── browser.py          Playwright 会话、storageState、拟人化打字
 │   ├── selectors.py        所有抖音选择器 —— 出问题就改这个文件
@@ -701,13 +711,15 @@ DY-spark/
 python -m unittest discover -s tests -t . -v
 ```
 
-97 个测试：配置默认值、每一条校验失败路径、三种目标策略（含单次上限）、火花识别的标记固件、CLI 参数解析、CDP 工具函数、环境自检的判定与退出码。**不需要浏览器，也不需要网络。**
+86 个测试：配置默认值、每一条校验失败路径、三种目标策略（含单次上限）、火花识别的标记固件、CLI 参数解析、CDP 工具函数。**不需要浏览器，也不需要网络。**
+
+> 环境自检不在这个数字里——它是在 `scan.bat` 里用批处理实现的，因为「Python 没装」这种情况恰恰需要在不依赖 Python 的前提下才能查出来。
 
 ---
 
 ## 常见问题
 
-> 这里的每一条，`python -m dspark doctor` 基本都能替你检查出来。
+> 这里的每一条，`scan.bat` 第 1 步的 8 项检查基本都能替你查出来。
 
 | 现象 | 原因与解决 |
 |---|---|

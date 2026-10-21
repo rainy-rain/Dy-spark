@@ -133,12 +133,3 @@ def remedy(
             info(f"  {index}. {step_text}")
     if docs:
         info(f"  Docs: {docs}")
-
-
-def verdict(ok_: bool, name: str, detail: str = "") -> None:
-    """One line of a doctor-style report."""
-    mark = "ok" if ok_ else "!!"
-    line = f"[{mark:>2}] {name}"
-    if detail:
-        line = f"{line:<34} {detail}"
-    _emit(line)

@@ -138,7 +138,8 @@ async def open_session(
                     "It opens its OWN browser profile, so any Edge or Chrome you "
                     "already have open is left alone.",
                     "Then sign in to Douyin once in the window it opens.",
-                    "Check the whole setup at any time with: python -m dspark doctor",
+                    "For a full environment check, run scan.bat — step 1 checks "
+                    "all eight prerequisites and says how to fix each one.",
                 ],
                 links.INSTALL,
             )
