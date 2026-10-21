@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from . import console
+from . import console, links
 from .config import Config
 
 # Playwright's bundled Chromium advertises "HeadlessChrome" in its user agent,
@@ -30,12 +30,6 @@ from .config import Config
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-)
-
-INSTALL_HINT = (
-    "Playwright is not installed.\n"
-    "    pip install -r requirements.txt\n"
-    "    python -m playwright install chromium"
 )
 
 # `playwright install chromium` normally downloads into a per-user cache outside
@@ -58,7 +52,18 @@ def require_playwright() -> None:
     try:
         import playwright.async_api  # noqa: F401
     except ImportError:
-        raise SystemExit(INSTALL_HINT) from None
+        console.remedy(
+            "Playwright is not installed, so no browser can be driven.",
+            [
+                "From the project folder:",
+                r"   .venv\Scripts\pip install -r requirements.txt",
+                "   (macOS / Linux: .venv/bin/pip install -r requirements.txt)",
+                "If you need `dspark login` rather than `dspark edge`, also run:",
+                "   python -m playwright install chromium",
+            ],
+            links.PLAYWRIGHT,
+        )
+        raise SystemExit(1) from None
 
 
 async def pause(low_ms: int, high_ms: int) -> None:
@@ -82,15 +87,6 @@ class Session:
 
     async def cookie_names(self) -> set[str]:
         return {cookie["name"] for cookie in await self.context.cookies()}
-
-
-CDP_HINT = (
-    "Could not attach to the browser at {url}.\n"
-    "Run this first: it starts a browser with the debugging port open, on a\n"
-    "separate profile - the only kind Edge 136+ allows the port on:\n"
-    "    python -m dspark edge\n"
-    "Then sign in to Douyin once in the window it opens. The profile remembers it."
-)
 
 
 def _pick_page(context: Any, prefer: str = "/chat") -> Any:
@@ -134,7 +130,18 @@ async def open_session(
         try:
             browser = await playwright.chromium.connect_over_cdp(cdp_url)
         except Exception as exc:
-            console.error(CDP_HINT.format(url=cdp_url))
+            console.remedy(
+                f"Could not attach to a browser at {cdp_url}.",
+                [
+                    "Start one first, in this same folder:",
+                    "   python -m dspark edge",
+                    "It opens its OWN browser profile, so any Edge or Chrome you "
+                    "already have open is left alone.",
+                    "Then sign in to Douyin once in the window it opens.",
+                    "Check the whole setup at any time with: python -m dspark doctor",
+                ],
+                links.INSTALL,
+            )
             console.verbose(f"connect_over_cdp failed: {exc}")
             await playwright.stop()
             raise SystemExit(1) from None

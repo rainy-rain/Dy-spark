@@ -16,7 +16,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__, console
+from . import __version__, console, links
 from .config import DEFAULT_CONFIG_PATH, Config, ConfigError
 
 
@@ -110,6 +110,23 @@ def build_parser() -> argparse.ArgumentParser:
         "config", parents=[common], help="print the resolved configuration and exit"
     )
 
+    doctor_cmd = sub.add_parser(
+        "doctor",
+        parents=[common],
+        help=(
+            "check that python, playwright, a browser, config.yaml and the login "
+            "are all present — and print the fix for anything missing"
+        ),
+    )
+    doctor_cmd.add_argument(
+        "--tools-only",
+        action="store_true",
+        help=(
+            "only check that the tools are installed; skip the browser-attached "
+            "and network checks, which need things to already be running"
+        ),
+    )
+
     edge_cmd = sub.add_parser(
         "edge",
         parents=[common],
@@ -168,12 +185,18 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     # `analyze` reads a saved HTML file: no config, no browser, no network.
-    # `edge` only starts a browser. Both are handled before the config is loaded
-    # so they still work if config.yaml is missing or broken.
+    # `edge` only starts a browser. `doctor` exists to diagnose a missing or
+    # broken config. All three are handled before the config is loaded, so they
+    # still work precisely when the config is the thing that is wrong.
     if args.command == "analyze":
         from . import analyze
 
         return analyze.run(Path(args.html) if args.html else None)
+
+    if args.command == "doctor":
+        from . import doctor
+
+        return doctor.run(Path(args.config), tools_only=args.tools_only)
 
     if args.command == "edge":
         from . import cdp
@@ -186,7 +209,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = Config.load(Path(args.config))
     except ConfigError as exc:
-        console.error(str(exc))
+        console.remedy(
+            str(exc),
+            [
+                "Everything configurable lives in config.yaml. If the file is "
+                "missing, copy the template:",
+                "   copy config.example.yaml config.yaml",
+                "   (macOS / Linux: cp config.example.yaml config.yaml)",
+                "Then check any value the message above names.",
+                "Print what the file actually resolves to: python -m dspark config",
+                "Check the whole setup end to end:        python -m dspark doctor",
+            ],
+            links.CONFIG,
+        )
         return 2
 
     # Shared options use SUPPRESS defaults, so they may be absent entirely.

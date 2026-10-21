@@ -2,30 +2,37 @@
 
 每天给你在意的人发一条消息，让抖音聊天火花（连续聊天天数）不掉——命令行运行，跑在你自己的机器上，用你自己的账号。
 
+**刚从 GitHub 下载下来？** 看 [从零开始（另一台电脑）](#从零开始另一台电脑)，那是完整的按顺序上手流程。
+
 ```
-python -m dspark login        # 扫一次二维码
+python -m dspark doctor       # 检查环境：缺什么、怎么装、文档在哪
+python -m dspark edge         # 开一个可驱动的浏览器（不影响你已开的窗口）
+python -m dspark login        # 或者用自带的 Chromium，扫一次二维码
 python -m dspark scan         # 列出每个会话，以及有没有火花
 python -m dspark send         # 空跑：只列出会发给谁，不发送
 python -m dspark send --yes   # 真正发送（打字文案）
 python -m dspark send --yes --emoji   # 改发表情面板里的「续火花」表情
 ```
 
+任何时候卡住了，先跑 `python -m dspark doctor`。它逐项检查 Python 版本、Playwright、浏览器、配置文件、登录状态和网络，每个失败项都给出解决步骤和文档链接。
+
 抖音改版时用的排查工具：
 
 ```
-python -m dspark edge         # 开一个带调试端口的浏览器
-python -m dspark pick         # 点页面元素，直接得到它的选择器
 python -m dspark probe        # 把整个页面 dump 下来
 python -m dspark analyze      # 离线从 dump 里推断选择器
+python -m dspark pick         # 点页面元素，直接得到它的选择器
 ```
 
-嫌麻烦可以直接双击 `scan.bat`：它会自动把浏览器准备好 → 扫描 → 问你要怎么做：
+嫌麻烦可以直接双击 `scan.bat`：它会先自检环境 → 启动浏览器 → 扫描 → 问你要怎么做：
 
 ```
        0  =  输入文字发送
        1  =  退出，什么都不发
        2  =  发送抖音表情面板里的「续火花」表情
 ```
+
+任何一步失败，窗口都会停住并显示失败原因和修复步骤，不会一闪而过。
 
 ---
 
@@ -198,6 +205,8 @@ ipcMain.handle('login', async () => { await loginAndStorageState() })
 
 ## 安装
 
+> **第一次在另一台电脑上跑？** 请直接看下一节 [从零开始（另一台电脑）](#从零开始另一台电脑)——那里是完整的、按顺序的上手流程，包括每一步可能出的错和怎么修。本节只列出命令，供已经有了环境的人速查。
+
 需要 Python 3.10 或更高版本。
 
 ```bash
@@ -213,7 +222,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-然后把 Chromium 装**到项目里**，而不是装进用户级缓存，这样整个工具是自包含的：
+补丁：如果你打算用 `dspark login`（而不是接管已打开的 Edge），还需要把 Chromium 装**到项目里**，这样整个工具是自包含的：
 
 ```bash
 # Windows (PowerShell)
@@ -226,6 +235,8 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.browsers" python -m playwright install chromium
 
 这是一次性的约 700 MB 下载，落在 `DY-spark/.browsers/`（已被 gitignore）。**这个环境变量只需要在安装时设一次**——`dspark/browser.py` 在运行时会自己找到 `.browsers/`，以后不用再 export。
 
+> **用 `dspark edge` + `--cdp` 的话，这 700 MB 可以不下。** 那条路径驱动的是你系统里已有的 Edge，不需要 Playwright 自带的 Chromium。`dspark doctor` 会把这一项标成警告而不是错误，原因就在这里。
+
 最后：
 
 ```bash
@@ -234,9 +245,245 @@ cp config.example.yaml config.yaml     # Windows: copy config.example.yaml confi
 
 ---
 
+## 从零开始（另一台电脑）
+
+假设你刚从 GitHub 把仓库 clone 到一台**全新的机器**上，什么都没装。按这个顺序走，每一步都会告诉你「做什么」和「失败了怎么修」。
+
+最后一步双击 `scan.bat` 其实就够了，但第一次建议手动走一遍——出问题时你能看清是哪一步。
+
+### 第 0 步 —— 你需要什么
+
+| 东西 | 说明 |
+|---|---|
+| 一台 Windows / macOS / Linux 电脑 | 下面以 Windows 为主，其他系统的差异会标出来 |
+| **Python 3.10 或更新** | 检查：`python --version` |
+| **Microsoft Edge 或 Google Chrome** | 几乎都有。没有的话装 Edge 最省事（不需要另外下 700MB） |
+| 一个抖音账号 | 首次要扫码登录**一次** |
+
+### 第 1 步 —— 装 Python
+
+```powershell
+python --version
+```
+
+- 显示 `Python 3.10.x` 或更高 → 跳过这一步
+- 显示 `3.9` 或更低 → 版本太老，装新的
+- 提示「不是内部或外部命令」→ 没装，或者没加进 PATH
+
+装的方法（任选其一）：
+
+```powershell
+winget install Python.Python.3.12
+```
+
+或者从 <https://www.python.org/downloads/> 下载安装包，**安装时务必勾选 "Add python.exe to PATH"**。
+
+装完重开一个终端再验证一次。
+
+### 第 2 步 —— 下载代码
+
+```powershell
+git clone https://github.com/rainy-rain/Dy-spark.git
+cd Dy-spark
+```
+
+没有 git 的话，在仓库页面点 **Code → Download ZIP**，解压后进入那个文件夹，效果一样。
+
+### 第 3 步 —— 建虚拟环境并装依赖
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+<details>
+<summary>macOS / Linux 的写法</summary>
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+</details>
+
+> **为什么要虚拟环境？** 不是必须，但强烈建议：把依赖关在项目里，不会污染你系统里的 Python，删掉文件夹就干净了。下面的命令都会用 `.venv\Scripts\python.exe` 而不是裸的 `python`。
+
+### 第 4 步 —— 复制配置
+
+```powershell
+copy config.example.yaml config.yaml
+```
+
+<details>
+<summary>macOS / Linux</summary>
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+</details>
+
+`config.yaml` 已被 gitignore，所以你的设置只留在本地。**默认 `sending.enabled: false`，也就是无论怎么跑都不会发消息**，等第 7 步确认没问题再打开。
+
+### 第 5 步 —— 自检环境（推荐先做）
+
+```powershell
+.venv\Scripts\python.exe -m dspark doctor
+```
+
+它会逐项检查，每一项都给出**状态 + 怎么修 + 文档链接**：
+
+```
+--- Environment check ---
+[ok] python                        3.12 (need 3.10+)
+[ok] config.yaml                   config.yaml
+[ok] playwright                    installed
+[ok] browser                       Edge (C:\Program Files (x86)\Microsoft\Edge\...)
+[!!] chromium                      not installed (only needed for `login`)
+[!!] saved login                   none saved yet
+[!!] debug port                    nothing listening on http://127.0.0.1:9222
+[ok] network                       douyin.com reachable
+
+--- Result ---
+[!] 3 thing(s) to know about — not fatal, but they will bite in some modes:
+[!] Playwright's bundled Chromium is not installed. ...
+[i] How to fix:
+[i]   1. If you use `python -m dspark edge` and pass --cdp, ignore this.
+...
+[ok] Nothing blocking. You can run dspark.
+```
+
+怎么看结果：
+
+| 标记 | 含义 |
+|---|---|
+| `[ok]` | 这一项没问题 |
+| `[!!]` | 需要注意，但**不一定**是错误——比如「还没开浏览器」在启动浏览器之前本来就是正常的 |
+| `--- Result ---` 下面有 `[x]` | **阻塞问题**，必须修好才能继续。每条都会列出解决步骤 |
+| 只有 `[!]` | 不阻塞，可以继续 |
+
+退出码：有阻塞问题是 `1`，否则 `0`。所以脚本里可以用 `if errorlevel 1` 拦住。
+
+只想检查「工具装齐了没有」、不检查浏览器和网络：
+
+```powershell
+.venv\Scripts\python.exe -m dspark doctor --tools-only
+```
+
+### 第 6 步 —— 启动一个能被驱动的浏览器，并登录
+
+```powershell
+.venv\Scripts\python.exe -m dspark edge
+```
+
+它会在 `9222` 端口开一个**带调试接口**的浏览器，用的是 `.edge-profile/` 这个**独立配置目录**：
+
+- **你自己已经开着的 Edge / Chrome 完全不受影响**，不需要关闭任何窗口
+- 为什么必须用独立配置：Edge 136+ 出于安全考虑，拒绝对**默认配置**开调试端口（否则任何程序都能接管你已登录的会话）
+- 代价：这个配置目录需要**单独登录一次抖音**
+
+命令成功时会打印 `[ok] Ready: Edg/xxx on port 9222`。然后**在那个窗口里打开 <https://www.douyin.com/chat> 并扫码登录**。登录状态会被这个配置目录记住，以后不用再扫。
+
+验证登录成功：
+
+```powershell
+.venv\Scripts\python.exe -m dspark status --cdp http://127.0.0.1:9222
+```
+
+看到 `[ok] Still logged in.` 就对了。
+
+<details>
+<summary>为什么用 <code>--cdp</code> 而不是 <code>dspark login</code>？</summary>
+
+两条路都能用：
+
+| | `dspark edge` + `--cdp` | `dspark login` |
+|---|---|---|
+| 用哪个浏览器 | 你系统里的 Edge / Chrome | Playwright 自带的 Chromium |
+| 需要下载 700MB | **不需要** | 需要 |
+| 登录存在哪 | `.edge-profile/` 里（浏览器自己管） | `.session/storage_state.json` |
+| 适合 | 在自己电脑上长期用 | 想做成完全自包含的工具 |
+
+本文档主推前者，因为省一次 700MB 下载，而且能实时看到浏览器在做什么。
+
+</details>
+
+### 第 7 步 —— 扫描，核对火花识别
+
+```powershell
+.venv\Scripts\python.exe -m dspark scan --cdp http://127.0.0.1:9222
+```
+
+**这一步不发送任何东西。** 它会走完整个聊天列表并打印一行一个会话。**先拿这张表跟手机上的抖音对一遍**：
+
+- 总数对不对
+- 天数对不对
+- 该标 `yes` 的人确实标了 `yes`
+
+不对的话不要往下走，去看 [步骤 3 —— 修选择器](#步骤-3--修选择器只在步骤-2-看起来不对时做)。
+
+### 第 8 步 —— 空跑
+
+```powershell
+.venv\Scripts\python.exe -m dspark send --cdp http://127.0.0.1:9222
+```
+
+打印出**会**发给谁、发什么。**不会真的发送**（因为 `sending.enabled` 还是 `false`，而且没加 `--yes`）。反复跑到名单正好是你预期的人为止。
+
+### 第 9 步 —— 真正发送
+
+在 `config.yaml` 里把开关打开：
+
+```yaml
+sending:
+  enabled: true
+```
+
+然后（`--yes` 是第二个开关，两个都要）：
+
+```powershell
+.venv\Scripts\python.exe -m dspark send --cdp http://127.0.0.1:9222 --yes
+```
+
+**第一次真发时保持 `browser.headless: false`**，这样你能在浏览器窗口里看到它打字和发送。
+
+### 之后就双击 scan.bat
+
+环境弄好之后，日常用不着这些命令了——**双击 `scan.bat`** 就行。它会依次：
+
+```
+1/4  环境检查（doctor --tools-only）——缺什么就停在这里，并告诉你怎么装
+2/4  启动可驱动的浏览器
+3/4  扫描聊天列表（不发送）
+4/4  问你要怎么做：0 输入文字 / 1 退出 / 2 发表情
+```
+
+任何一步失败，窗口**不会关掉**，错误会连同解决步骤一起停在屏幕上。
+
+### 第一次常见问题
+
+| 现象 | 原因与解决 |
+|---|---|
+| `不是内部或外部命令: python` | Python 没装或没加进 PATH。见第 1 步，装完**重开终端**。 |
+| `pip 不是内部或外部命令` | 用 `.venv\Scripts\pip`，不要直接 `pip`。见第 3 步。 |
+| `ModuleNotFoundError: No module named 'dspark'` | 当前目录不对。必须**在 DY-spark 文件夹里**运行。 |
+| `config file not found: config.yaml` | 第 4 步没做。复制模板即可。 |
+| `Playwright is not installed` | 第 3 步没做或失败。重跑一遍 `pip install -r requirements.txt`。 |
+| `Could not attach to the browser at http://127.0.0.1:9222` | 浏览器还没启动。先跑 `dspark edge`（第 6 步）。**不需要关闭你已有的浏览器。** |
+| 浏览器登录了，却报 `Not signed in` | dspark 用的是**独立配置目录**，需要单独登录一次。在第 6 步打开的窗口里扫码。 |
+| `scan` 扫到的会话数比实际少 | 列表是虚拟化的，滚动可能提前停了。加 `-v` 看 `scroll` 那几行。 |
+| 一切看起来都正常，但发不出去 | 检查 `sending.enabled` **和** `--yes` 两个开关。 |
+
+还不行就跑 `doctor` 并把输出发出来——它已经把大部分可能性覆盖了。或者开 [Issues](https://github.com/rainy-rain/Dy-spark/issues)。
+
+---
+
 ## 快速开始
 
+> 环境已经按上一节弄好了？这里是命令速查。**第一次用请走上一节。**
+
 ### 步骤 1 —— 登录
+
 
 ```bash
 python -m dspark login
@@ -424,19 +671,21 @@ python -m dspark send --yes --emoji
 
 ```
 DY-spark/
-├── scan.bat                一键：准备浏览器 → 扫描 → 询问（打字 / 表情 / 退出）
+├── scan.bat                一键：环境自检 → 启动浏览器 → 扫描 → 询问
 ├── config.example.yaml     模板；复制成 config.yaml
 ├── requirements.txt
 ├── dspark/
 │   ├── __main__.py         CLI 入口              (python -m dspark)
 │   ├── config.py           加载 + 校验
+│   ├── doctor.py           环境自检：每项给状态 + 修复步骤 + 文档链接
+│   ├── links.py            文档 / 下载地址集中在一处
 │   ├── browser.py          Playwright 会话、storageState、拟人化打字
 │   ├── selectors.py        所有抖音选择器 —— 出问题就改这个文件
 │   ├── analyze.py          离线 DOM 分析：找候选列表、差异点、输入框
 │   ├── picker.py           交互式"点元素、拿选择器"
 │   ├── cdp.py              启动 / 接管带调试端口的浏览器
 │   ├── streak.py           login / status / probe / scan / send
-│   └── console.py          输出，并镜像到日志文件
+│   └── console.py          输出、镜像日志，以及"问题 + 解决方案"的打印格式
 ├── tests/                  离线单元测试（不需要浏览器，不需要网络）
 ├── .session/               你的登录状态（已 gitignore）
 ├── .browsers/              Chromium 副本（已 gitignore）
@@ -452,11 +701,13 @@ DY-spark/
 python -m unittest discover -s tests -t . -v
 ```
 
-82 个测试：配置默认值、每一条校验失败路径、三种目标策略（含单次上限）、火花识别的标记固件、CLI 参数解析、CDP 工具函数。**不需要浏览器，也不需要网络。**
+97 个测试：配置默认值、每一条校验失败路径、三种目标策略（含单次上限）、火花识别的标记固件、CLI 参数解析、CDP 工具函数、环境自检的判定与退出码。**不需要浏览器，也不需要网络。**
 
 ---
 
 ## 常见问题
+
+> 这里的每一条，`python -m dspark doctor` 基本都能替你检查出来。
 
 | 现象 | 原因与解决 |
 |---|---|

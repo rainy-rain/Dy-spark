@@ -139,13 +139,10 @@ class Config:
     def load(cls, path: Path) -> "Config":
         path = Path(path)
         if not path.exists():
-            hint = (
-                f" Copy the template first:\n"
-                f"    cp {EXAMPLE_CONFIG_PATH} {DEFAULT_CONFIG_PATH}"
-                if path.name == DEFAULT_CONFIG_PATH.name
-                else ""
-            )
-            raise ConfigError(f"config file not found: {path}.{hint}")
+            # Just the fact. The caller turns this into a problem-plus-fix block
+            # (see console.remedy); repeating the copy command here as well made
+            # the message say the same thing twice.
+            raise ConfigError(f"config file not found: {path}")
 
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

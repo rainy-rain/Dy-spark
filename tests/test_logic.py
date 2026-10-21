@@ -74,11 +74,20 @@ class DefaultsTests(unittest.TestCase):
 
 
 class ValidationTests(unittest.TestCase):
-    def test_missing_file_is_reported_with_a_hint(self) -> None:
+    def test_missing_file_is_reported_with_its_path(self) -> None:
+        """The exception states the fact; the fix belongs to the caller.
+
+        It used to embed a "copy the template" hint as well, but the caller now
+        prints a problem-plus-fix block (console.remedy), so the hint appeared
+        twice — and a library raising a formatted tutorial is the wrong place for
+        one anyway. The fix is checked in the CLI/remedy tests instead.
+        """
+        missing = Path(tempfile.mkdtemp()) / "config.yaml"
         with self.assertRaises(ConfigError) as ctx:
-            Config.load(Path(tempfile.mkdtemp()) / "config.yaml")
-        self.assertIn("config file not found", str(ctx.exception))
-        self.assertIn("config.example.yaml", str(ctx.exception))
+            Config.load(missing)
+        message = str(ctx.exception)
+        self.assertIn("config file not found", message)
+        self.assertIn("config.yaml", message)
 
     def test_invalid_yaml_names_the_problem(self) -> None:
         with self.assertRaises(ConfigError) as ctx:

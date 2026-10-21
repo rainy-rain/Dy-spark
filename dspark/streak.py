@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import analyze, console, selectors
+from . import analyze, console, links, selectors
 from .browser import human_type, open_session, pause
 from .config import Config
 
@@ -75,15 +75,32 @@ async def _visible(page: Any, selector: str, timeout_ms: int = 1500) -> bool:
         return False
 
 
-def _login_advice(cfg: Config) -> str:
-    """What to tell a user who is not logged in.
+def _login_remedy(cfg: Config) -> None:
+    """Report "not signed in" with a fix that matches how dspark is running.
 
-    Mode-dependent: in attached mode `dspark login` does nothing useful, because
-    the session belongs to the browser that was attached to, not to dspark.
+    Mode-dependent, and getting it wrong wastes someone's afternoon: in attached
+    mode `dspark login` cannot help at all, because the session belongs to the
+    browser that was attached to, not to dspark. Pointing at that command there
+    sends people down a path that cannot work.
     """
     if cfg.browser.cdp_url:
-        return "Sign in inside the attached browser window, then run this again."
-    return "Run: python -m dspark login"
+        steps = [
+            "In the browser window dspark is attached to, open "
+            f"{links.DOUYIN}chat",
+            "Sign in there — scan the QR code with the Douyin app.",
+            "Run this command again. That browser profile remembers the login.",
+        ]
+    else:
+        steps = [
+            "Run: python -m dspark login",
+            "Scan the QR code in the window that opens.",
+            "Run this command again.",
+        ]
+    console.remedy(
+        "Not signed in to Douyin, so there is no chat list to read.",
+        steps,
+        links.QUICK_START,
+    )
 
 
 async def _looks_logged_in(session: Any) -> bool:
@@ -166,9 +183,18 @@ async def _goto_messages(cfg: Config, session: Any) -> bool:
     console.info(f"  ended up at : {page.url}")
     if await _visible(page, selectors.LOGGED_OUT_HINT, timeout_ms=1200):
         console.info("  A 登录 button is on screen, so you are logged out.")
-        console.info(f"  {_login_advice(cfg)}")
+        _login_remedy(cfg)
     else:
-        console.info("  Otherwise MESSAGE_LIST is stale: python -m dspark probe")
+        console.remedy(
+            "The chat list never rendered, and nothing says you are logged out "
+            "— so MESSAGE_LIST is probably stale.",
+            [
+                "Dump the page so the real markup can be compared:",
+                "   python -m dspark probe",
+                "Then edit the constants in dspark/selectors.py.",
+            ],
+            links.TROUBLESHOOTING,
+        )
     return False
 
 
@@ -241,8 +267,7 @@ async def status(cfg: Config) -> int:
             console.ok("Still logged in.")
             return 0
 
-    console.warn("Not logged in.")
-    console.info(_login_advice(cfg))
+    _login_remedy(cfg)
     return 1
 
 
@@ -655,7 +680,7 @@ async def scan(cfg: Config) -> int:
             await session.page.goto(cfg.douyin.home_url, wait_until="domcontentloaded")
             await asyncio.sleep(2.0)
             if not await _looks_logged_in(session):
-                console.error(f"Not logged in. {_login_advice(cfg)}")
+                _login_remedy(cfg)
                 return 1
 
         if not await _goto_messages(cfg, session):
@@ -1209,7 +1234,7 @@ async def send(
             await session.page.goto(cfg.douyin.home_url, wait_until="domcontentloaded")
             await asyncio.sleep(2.0)
             if not await _looks_logged_in(session):
-                console.error(f"Not logged in. {_login_advice(cfg)}")
+                _login_remedy(cfg)
                 return 1
 
         if not await _goto_messages(cfg, session):
@@ -1219,8 +1244,19 @@ async def send(
         console.info(f"Conversations found: {len(conversations)}")
 
         if not conversations:
-            console.error("No conversations matched CONVERSATION_ITEM.")
-            console.info("The selectors need updating: python -m dspark probe")
+            console.remedy(
+                "No conversations were found, so there is nothing to list or send to.",
+                [
+                    "Check you are signed in:  python -m dspark status",
+                    "Dump the page so the real markup can be compared:",
+                    "   python -m dspark probe",
+                    "Then fix the matching constant in dspark/selectors.py — "
+                    "CONVERSATION_ITEM is the first one to check.",
+                    "`python -m dspark pick` is quicker: click a chat row in the "
+                    "browser and it prints the selector for it.",
+                ],
+                links.TROUBLESHOOTING,
+            )
             return 1
 
         matched = _matching_targets(cfg, conversations)

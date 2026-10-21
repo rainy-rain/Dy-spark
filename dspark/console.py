@@ -93,3 +93,52 @@ def error(message: str) -> None:
 def verbose(message: str) -> None:
     if _VERBOSE:
         _emit(f"    . {message}")
+
+
+def problem(message: str) -> None:
+    """Like `error()`, but on stdout.
+
+    `error()` goes to stderr so that `2>` captures failures. That is right for a
+    one-line "this failed", and wrong for a multi-line block that only makes
+    sense in order: redirected, the stdout half and the stderr half get separated
+    and the explanation ends up printed after the lines it explains.
+    """
+    _emit(f"[x] {message}")
+
+
+def remedy(
+    problem_text: str,
+    steps: list[str] | tuple[str, ...] = (),
+    docs: str | None = None,
+    *,
+    level: str = "error",
+) -> None:
+    """Report a problem *and* what to do about it.
+
+    A message that only says what broke is half a message. On a fresh clone the
+    usual cause is a missing prerequisite rather than a bug — no venv, no
+    Chromium, no config.yaml, no login — and the person reading it has never seen
+    this codebase. So every blocking error names the fix, in order, and links to
+    something that explains it properly.
+
+    The whole block goes to stdout, deliberately: see `problem()`.
+    """
+    if level == "warn":
+        _emit(f"[!] {problem_text}")
+    else:
+        _emit(f"[x] {problem_text}")
+    if steps:
+        info("How to fix:")
+        for index, step_text in enumerate(steps, start=1):
+            info(f"  {index}. {step_text}")
+    if docs:
+        info(f"  Docs: {docs}")
+
+
+def verdict(ok_: bool, name: str, detail: str = "") -> None:
+    """One line of a doctor-style report."""
+    mark = "ok" if ok_ else "!!"
+    line = f"[{mark:>2}] {name}"
+    if detail:
+        line = f"{line:<34} {detail}"
+    _emit(line)

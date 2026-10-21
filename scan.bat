@@ -2,9 +2,10 @@
 rem ============================================================
 rem  DY-spark  :  scan, then optionally send
 rem
-rem   1. checks a browser is attachable
-rem   2. scans the chat list and prints who has a spark
-rem   3. asks what to do: type a message, send the emoji, or exit
+rem   1. checks that the tools it needs are actually installed
+rem   2. starts a browser it can drive (leaves your own windows alone)
+rem   3. scans the chat list and prints who has a spark
+rem   4. asks what to do: type a message, send the emoji, or exit
 rem
 rem  Double-click this file.
 rem ============================================================
@@ -37,22 +38,19 @@ if not exist "%PY%" (
 
 echo.
 echo ============================================================
-echo  1/3   Browser check
+echo  1/4   Environment check
+echo        python, playwright, a browser, config.yaml
 echo ============================================================
 echo.
-"%PY%" -m dspark edge
 
-echo.
-echo ============================================================
-echo  2/3   Scanning the chat list
-echo        (this step sends nothing)
-echo ============================================================
-echo.
-"%PY%" -m dspark scan --cdp "%CDP%"
+rem Only the installed-tools checks: the browser and network checks would fail
+rem here simply because nothing has been started yet, and step 2 starts it.
+"%PY%" -m dspark doctor --tools-only
 if errorlevel 1 (
   echo.
-  echo [x] The scan did not succeed, so there is nothing to send to.
-  echo     Fix the scan first, then run this again.
+  echo [x] Something above is missing. Each problem lists the command that
+  echo     fixes it, and a link that explains it. Nothing else will run until
+  echo     that is sorted out.
   echo.
   pause
   exit /b 1
@@ -60,7 +58,40 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
-echo  3/3   Send to the conversations that have a spark?
+echo  2/4   Starting a browser to drive
+echo        your own Edge windows are left alone
+echo ============================================================
+echo.
+"%PY%" -m dspark edge
+if errorlevel 1 (
+  echo.
+  echo [x] Could not get a browser ready. The message above says why, and how
+  echo     to fix it.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo.
+echo ============================================================
+echo  3/4   Scanning the chat list
+echo        this step sends nothing
+echo ============================================================
+echo.
+"%PY%" -m dspark scan --cdp "%CDP%"
+if errorlevel 1 (
+  echo.
+  echo [x] The scan did not succeed, so there is nothing to send to.
+  echo     The message above says which part failed; -v shows every page action:
+  echo         .venv\Scripts\python.exe -m dspark scan --cdp %CDP% -v
+  echo.
+  pause
+  exit /b 1
+)
+
+echo.
+echo ============================================================
+echo  4/4   Send to the conversations that have a spark?
 echo.
 echo          0  =  send text that I type now
 echo          1  =  exit, send nothing
