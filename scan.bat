@@ -1,9 +1,10 @@
 @echo off
 rem ============================================================
 rem  DY-spark  :  check the environment, start a browser, scan,
-rem               then ask whether to send.
+rem               then send the streak emoji to everyone with a spark.
 rem
-rem  Double-click this file.
+rem  Double-click this file. There is nothing to answer - it runs
+rem  straight through.
 rem
 rem  Deliberately ASCII-only, and deliberately no `chcp 65001`.
 rem
@@ -12,10 +13,10 @@ rem  page (936 here). A UTF-8 Chinese comment is therefore decoded as
 rem  GBK, which desynchronises the parser: `rem` lines get executed as
 rem  commands and characters get truncated. Measured, not theorised.
 rem
-rem  `chcp 65001` would fix the parsing, but it makes `set /p` below
-rem  read nothing at all - also measured. The two are mutually
-rem  exclusive, so this file stays ASCII and the Chinese prose lives
-rem  in the README, which every URL here points at.
+rem  `chcp 65001` would fix that, but when this file still had a prompt
+rem  it also made `set /p` read nothing at all - also measured. So the
+rem  code page is left alone, this file stays ASCII, and the Chinese
+rem  prose lives in the README that every URL here points at.
 rem ============================================================
 
 setlocal
@@ -102,67 +103,25 @@ if errorlevel 1 (
 )
 
 rem ============================================================
-rem  4/4  Ask
+rem  4/4  Send the emoji
 rem ============================================================
 echo.
 echo ============================================================
-echo  4/4   Send to the conversations that have a spark?
-echo.
-echo          0  =  send text I type now
-echo          1  =  exit, send nothing
-echo          2  =  send the emoji from Douyin's panel
-echo               (sending.emoji_label, default: the streak emoji)
+echo  4/4   Sending the streak emoji, to everyone with a spark
+echo        the panel opens and closes once per friend
 echo ============================================================
 echo.
-
-set /a TRIES=0
-
-:choose
-set "CHOICE="
-set /p "CHOICE=Type 0, 1 or 2, then press Enter: "
-if "%CHOICE%"=="0" goto :ask_message
-if "%CHOICE%"=="1" goto :finish
-if "%CHOICE%"=="2" goto :send_emoji
-
-rem Bounded on purpose: set /p returns immediately and sets nothing
-rem when the input is exhausted, so an unguarded loop reprints the
-rem prompt forever (measured: five minutes of spinning).
-set /a TRIES+=1
-if %TRIES% GEQ 5 (
-  echo.
-  echo   [i] No valid choice after 5 attempts. Exiting, sending nothing.
-  goto :finish
-)
-echo   Please type 0, 1 or 2.
-goto :choose
-
-:ask_message
-echo.
-set "MSG="
-set /p "MSG=Message to send: "
-if not defined MSG (
-  echo.
-  echo   [i] Nothing was typed, so nothing will be sent.
-  goto :finish
-)
-echo.
-echo   ------------------------------------------------------------
-echo   Sending now. Watch the browser window to follow along.
-echo   Press Ctrl+C to stop.
-echo   ------------------------------------------------------------
-echo.
-"%PY%" -m dspark send --cdp "%CDP%" --yes --message "%MSG%"
-goto :finish
-
-:send_emoji
-echo.
-echo   ------------------------------------------------------------
-echo   Sending the emoji now. The panel opens once per friend.
-echo   Watch the browser window. Press Ctrl+C to stop.
-echo   ------------------------------------------------------------
+echo   Watch the browser window to follow along.
+echo   Press Ctrl+C if you want to stop.
 echo.
 "%PY%" -m dspark send --cdp "%CDP%" --yes --emoji
-goto :finish
+if errorlevel 1 (
+  echo.
+  echo   [x] The send did not finish cleanly. The log above says why.
+  echo       To retry by hand:
+  echo           .venv\Scripts\python.exe -m dspark send --cdp %CDP% --yes --emoji
+  echo.
+)
 
 :finish
 echo.
